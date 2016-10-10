@@ -298,7 +298,7 @@ create_llvm_function(LLVMContextRef ctx, LLVMModuleRef module,
 
 	LLVMSetFunctionCallConv(main_function, RADEON_LLVM_AMDGPU_CS);
 	for (unsigned i = 0; i < sgpr_params; ++i) {
-		if (i < array_params) {
+		if (array_params & (1 << i)) {
 			LLVMValueRef P = LLVMGetParam(main_function, i);
 			ac_add_function_attr(main_function, i + 1, AC_FUNC_ATTR_BYVAL);
 			ac_add_attr_dereferenceable(P, UINT64_MAX);
@@ -456,7 +456,7 @@ static void create_function(struct nir_to_llvm_context *ctx,
 {
 	LLVMTypeRef arg_types[23];
 	unsigned arg_idx = 0;
-	unsigned array_count = 0;
+	unsigned array_mask = 0;
 	unsigned sgpr_count = 0, user_sgpr_count;
 	unsigned i;
 	unsigned num_sets = ctx->options->layout ? ctx->options->layout->num_sets : 0;
@@ -470,19 +470,24 @@ static void create_function(struct nir_to_llvm_context *ctx,
 		 !ctx->options->layout->dynamic_offset_count)
 		need_push_constants = false;
 
+	/* scratch address */
+	arg_types[arg_idx++] = LLVMVectorType(ctx->i32, 2); /* address of scratch */
+
 	/* 1 for each descriptor set */
 	for (unsigned i = 0; i < num_sets; ++i) {
 		if (ctx->options->layout->set[i].layout->shader_stages & (1 << ctx->stage)) {
+			array_mask |= 1 << arg_idx;
 			arg_types[arg_idx++] = const_array(ctx->i8, 1024 * 1024);
 		}
 	}
 
 	if (need_push_constants) {
 		/* 1 for push constants and dynamic descriptors */
+		array_mask |= 1 << arg_idx;
 		arg_types[arg_idx++] = const_array(ctx->i8, 1024 * 1024);
 	}
 
-	array_count = arg_idx;
+
 	switch (nir->stage) {
 	case MESA_SHADER_COMPUTE:
 		arg_types[arg_idx++] = LLVMVectorType(ctx->i32, 3); /* grid size */
@@ -531,7 +536,7 @@ static void create_function(struct nir_to_llvm_context *ctx,
 
 	ctx->main_function = create_llvm_function(
 	    ctx->context, ctx->module, ctx->builder, NULL, 0, arg_types,
-	    arg_idx, array_count, sgpr_count, ctx->options->unsafe_math);
+	    arg_idx, array_mask, sgpr_count, ctx->options->unsafe_math);
 	set_llvm_calling_convention(ctx->main_function, nir->stage);
 
 
@@ -551,6 +556,11 @@ static void create_function(struct nir_to_llvm_context *ctx,
 
 	arg_idx = 0;
 	user_sgpr_idx = 0;
+
+	set_userdata_location_shader(ctx, AC_UD_SCRATCH, user_sgpr_idx, 2);
+	user_sgpr_idx += 2;
+	arg_idx++; /* scratch address */
+
 	for (unsigned i = 0; i < num_sets; ++i) {
 		if (ctx->options->layout->set[i].layout->shader_stages & (1 << ctx->stage)) {
 			set_userdata_location(&ctx->shader_info->user_sgprs_locs.descriptor_sets[i], user_sgpr_idx, 2);
@@ -4717,6 +4727,37 @@ static void ac_diagnostic_handler(LLVMDiagnosticInfoRef di, void *context)
 	LLVMDisposeMessage(description);
 }
 
+static const char *scratch_rsrc_dword0_symbol =
+	"SCRATCH_RSRC_DWORD0";
+
+static const char *scratch_rsrc_dword1_symbol =
+	"SCRATCH_RSRC_DWORD1";
+
+static void ac_apply_scratch_relocs(struct ac_shader_binary *binary, int sgpr)
+{
+	uint32_t nop_val = 0xbf800000;
+	unsigned i;
+	for (i = 0 ; i < binary->reloc_count; i++) {
+		const struct ac_shader_reloc *reloc =
+					&binary->relocs[i];
+		if (!strcmp(scratch_rsrc_dword0_symbol, reloc->name)) {
+			uint32_t reg_val = *(uint32_t *)(binary->code + reloc->offset - 4);
+			reg_val &= 0xffffff00;
+			reg_val |= sgpr;
+			*(uint32_t *)(binary->code + reloc->offset - 4) = reg_val;
+			util_memcpy_cpu_to_le32(binary->code + reloc->offset,
+			&nop_val, 4);
+		} else if (!strcmp(scratch_rsrc_dword1_symbol, reloc->name)) {
+			uint32_t reg_val = *(uint32_t *)(binary->code + reloc->offset - 4);
+			reg_val &= 0xffffff00;
+			reg_val |= (sgpr + 1);
+			*(uint32_t *)(binary->code + reloc->offset - 4) = reg_val;
+			util_memcpy_cpu_to_le32(binary->code + reloc->offset,
+			&nop_val, 4);
+		}
+	}
+}
+
 static unsigned ac_llvm_compile(LLVMModuleRef M,
                                 struct ac_shader_binary *binary,
                                 LLVMTargetMachineRef tm)
@@ -4756,6 +4797,8 @@ static unsigned ac_llvm_compile(LLVMModuleRef M,
 	/* Clean up */
 	LLVMDisposeMemoryBuffer(out_buffer);
 
+	/* patch for vulkan scratch rsrc */
+	ac_apply_scratch_relocs(binary, 0);
 out:
 	return retval;
 }
