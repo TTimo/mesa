@@ -361,6 +361,7 @@ static void radv_fill_shader_variant(struct radv_device *device,
 
 	switch (stage) {
 	case MESA_SHADER_VERTEX:
+	case MESA_SHADER_GEOMETRY:
 		variant->rsrc2 = S_00B12C_USER_SGPR(variant->info.num_user_sgprs) |
 			S_00B12C_SCRATCH_EN(scratch_enabled);
 		vgpr_comp_cnt = variant->info.vs.vgpr_comp_cnt;
@@ -1341,6 +1342,19 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 					       pipeline->layout, &key);
 
 		pipeline->active_stages |= mesa_to_vk_shader_stage(MESA_SHADER_VERTEX);
+	}
+
+	if (modules[MESA_SHADER_GEOMETRY]) {
+		union ac_shader_variant_key key = radv_compute_vs_key(pCreateInfo);
+
+		pipeline->shaders[MESA_SHADER_GEOMETRY] =
+			 radv_pipeline_compile(pipeline, cache, modules[MESA_SHADER_GEOMETRY],
+					       pStages[MESA_SHADER_GEOMETRY]->pName,
+					       MESA_SHADER_GEOMETRY,
+					       pStages[MESA_SHADER_GEOMETRY]->pSpecializationInfo,
+					       pipeline->layout, &key, dump);
+
+		pipeline->active_stages |= mesa_to_vk_shader_stage(MESA_SHADER_GEOMETRY);
 	}
 
 	if (!modules[MESA_SHADER_FRAGMENT]) {

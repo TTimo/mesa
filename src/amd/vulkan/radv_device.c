@@ -423,7 +423,7 @@ void radv_GetPhysicalDeviceFeatures(
 		.fullDrawIndexUint32                      = true,
 		.imageCubeArray                           = true,
 		.independentBlend                         = true,
-		.geometryShader                           = false,
+		.geometryShader                           = true,
 		.tessellationShader                       = false,
 		.sampleRateShading                        = false,
 		.dualSrcBlend                             = true,
