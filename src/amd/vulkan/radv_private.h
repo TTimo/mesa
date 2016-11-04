@@ -1020,7 +1020,6 @@ radv_init_metadata(struct radv_device *device,
 
 struct radv_image_view {
 	struct radv_image *image; /**< VkImageViewCreateInfo::image */
-	struct radeon_winsys_bo *bo;
 
 	VkImageViewType type;
 	VkImageAspectFlags aspect_mask;

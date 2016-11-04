@@ -800,7 +800,7 @@ radv_emit_framebuffer_state(struct radv_cmd_buffer *cmd_buffer)
 			radv_set_optimal_micro_tile_mode(cmd_buffer->device,
 							 att, dst_resolve_micro_tile_mode);
 		}
-		cmd_buffer->device->ws->cs_add_buffer(cmd_buffer->cs, att->attachment->bo, 8);
+		cmd_buffer->device->ws->cs_add_buffer(cmd_buffer->cs, att->attachment->image->bo, 8);
 
 		assert(att->attachment->aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT);
 		radv_emit_fb_color_state(cmd_buffer, i, &att->cb);
@@ -817,7 +817,7 @@ radv_emit_framebuffer_state(struct radv_cmd_buffer *cmd_buffer)
 		VkImageLayout layout = subpass->depth_stencil_attachment.layout;
 		struct radv_attachment_info *att = &framebuffer->attachments[idx];
 		struct radv_image *image = att->attachment->image;
-		cmd_buffer->device->ws->cs_add_buffer(cmd_buffer->cs, att->attachment->bo, 8);
+		cmd_buffer->device->ws->cs_add_buffer(cmd_buffer->cs, att->attachment->image->bo, 8);
 
 		radv_emit_fb_ds_state(cmd_buffer, &att->ds, image, layout);
 

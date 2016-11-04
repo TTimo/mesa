@@ -756,7 +756,6 @@ radv_image_view_init(struct radv_image_view *iview,
 		unreachable("bad VkImageType");
 	}
 	iview->image = image;
-	iview->bo = image->bo;
 	iview->type = pCreateInfo->viewType;
 	iview->vk_format = pCreateInfo->format;
 	iview->aspect_mask = pCreateInfo->subresourceRange.aspectMask;

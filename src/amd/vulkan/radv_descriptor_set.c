@@ -618,7 +618,7 @@ write_image_descriptor(struct radv_device *device,
 	RADV_FROM_HANDLE(radv_image_view, iview, image_info->imageView);
 	memcpy(dst, iview->descriptor, 8 * 4);
 	memcpy(dst + 8, iview->fmask_descriptor, 8 * 4);
-	*buffer_list = iview->bo;
+	*buffer_list = iview->image->bo;
 }
 
 static void
