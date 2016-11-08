@@ -147,6 +147,7 @@ static const VkPresentModeKHR present_modes[] = {
    VK_PRESENT_MODE_IMMEDIATE_KHR,
    VK_PRESENT_MODE_MAILBOX_KHR,
    VK_PRESENT_MODE_FIFO_KHR,
+   VK_PRESENT_MODE_FIFO_RELAXED_KHR,
 };
 
 static xcb_screen_t *
@@ -690,7 +691,8 @@ x11_present_to_x11(struct x11_swapchain *chain, uint32_t image_index,
    int64_t divisor = 0;
    int64_t remainder = 0;
 
-   if (chain->base.present_mode == VK_PRESENT_MODE_IMMEDIATE_KHR)
+   if (chain->base.present_mode == VK_PRESENT_MODE_IMMEDIATE_KHR ||
+       chain->base.present_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR)
       options |= XCB_PRESENT_OPTION_ASYNC;
 
    xshmfence_reset(image->shm_fence);
@@ -755,7 +757,8 @@ x11_manage_fifo_queues(void *state)
    struct x11_swapchain *chain = state;
    VkResult result;
 
-   assert(chain->base.present_mode == VK_PRESENT_MODE_FIFO_KHR);
+   assert(chain->base.present_mode == VK_PRESENT_MODE_FIFO_KHR ||
+          chain->base.present_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR);
 
    while (chain->status == VK_SUCCESS) {
       /* It should be safe to unconditionally block here.  Later in the loop
@@ -995,7 +998,8 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
          goto fail_init_images;
    }
 
-   if (chain->base.present_mode == VK_PRESENT_MODE_FIFO_KHR) {
+   if (chain->base.present_mode == VK_PRESENT_MODE_FIFO_KHR ||
+       chain->base.present_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR) {
       chain->threaded = true;
 
       /* Initialize our queues.  We make them image_count + 1 because we will
