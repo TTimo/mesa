@@ -1345,7 +1345,7 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 		    pCreateInfo->pMultisampleState->rasterizationSamples > 1) {
 			key.fs.fs_interp = FS_INTERP_FORCE_SAMPLE;
 		} else if (pCreateInfo->pMultisampleState->rasterizationSamples > 1) {
-			key.fs.fs_interp = FS_INTERP_BC_OPTIMIZE;
+		  //			key.fs.fs_interp = FS_INTERP_BC_OPTIMIZE;
 		} else {
 			key.fs.fs_interp = FS_INTERP_FORCE_CENTER;
 		}
