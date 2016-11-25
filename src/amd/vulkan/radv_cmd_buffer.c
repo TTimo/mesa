@@ -132,16 +132,19 @@ static VkResult radv_create_cmd_buffer(
 
 	if (pool) {
 		list_addtail(&cmd_buffer->pool_link, &pool->cmd_buffers);
+		cmd_buffer->queue_family_index = pool->queue_family_index;
+
 	} else {
 		/* Init the pool_link so we can safefly call list_del when we destroy
 		 * the command buffer
 		 */
 		list_inithead(&cmd_buffer->pool_link);
+		cmd_buffer->queue_family_index = RADV_QUEUE_GENERAL;
 	}
 
-	if (pool->queue_family_index == RADV_QUEUE_GENERAL)
+	if (cmd_buffer->queue_family_index == RADV_QUEUE_GENERAL)
 		ring = RING_GFX;
-	else if (pool->queue_family_index == RADV_QUEUE_TRANSFER)
+	else if (cmd_buffer->queue_family_index == RADV_QUEUE_TRANSFER)
 		ring = RING_DMA;
 
 	cmd_buffer->cs = device->ws->cs_create(device->ws, ring);
@@ -1309,7 +1312,8 @@ VkResult radv_BeginCommandBuffer(
 	memset(&cmd_buffer->state, 0, sizeof(cmd_buffer->state));
 
 	/* setup initial configuration into command buffer */
-	if (cmd_buffer->level == VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+	if (cmd_buffer->level == VK_COMMAND_BUFFER_LEVEL_PRIMARY &&
+	    cmd_buffer->queue_family_index == RADV_QUEUE_GENERAL) {
 		/* Flush read caches at the beginning of CS not flushed by the kernel. */
 		cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_INV_ICACHE |
 			RADV_CMD_FLAG_PS_PARTIAL_FLUSH |

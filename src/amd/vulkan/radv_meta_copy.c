@@ -205,7 +205,7 @@ void radv_CmdCopyBufferToImage(
 	RADV_FROM_HANDLE(radv_image, dest_image, destImage);
 	RADV_FROM_HANDLE(radv_buffer, src_buffer, srcBuffer);
 
-	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+	if (cmd_buffer->queue_family_index == RADV_QUEUE_TRANSFER) {
 		radv_cik_dma_copy_buffer_to_image(cmd_buffer, src_buffer,
 						  dest_image, regionCount,
 						  pRegions);
@@ -309,7 +309,7 @@ void radv_CmdCopyImageToBuffer(
 	RADV_FROM_HANDLE(radv_image, src_image, srcImage);
 	RADV_FROM_HANDLE(radv_buffer, dst_buffer, destBuffer);
 
-	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+	if (cmd_buffer->queue_family_index == RADV_QUEUE_TRANSFER) {
 		radv_cik_dma_copy_image_to_buffer(cmd_buffer, src_image,
 						  dst_buffer, regionCount,
 						  pRegions);
@@ -422,7 +422,7 @@ void radv_CmdCopyImage(
 	RADV_FROM_HANDLE(radv_image, src_image, srcImage);
 	RADV_FROM_HANDLE(radv_image, dest_image, destImage);
 
-	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+	if (cmd_buffer->queue_family_index == RADV_QUEUE_TRANSFER) {
 		radv_cik_dma_copy_image(cmd_buffer, src_image, srcImageLayout,
 					dest_image, destImageLayout,
 					regionCount, pRegions);

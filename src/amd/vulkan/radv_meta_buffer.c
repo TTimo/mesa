@@ -481,7 +481,7 @@ void radv_CmdFillBuffer(
 	if (fillSize == VK_WHOLE_SIZE)
 		fillSize = (dst_buffer->size - dstOffset) & ~3ull;
 
-	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+	if (cmd_buffer->queue_family_index == RADV_QUEUE_TRANSFER) {
 		radv_cik_dma_fill_buffer(cmd_buffer, dst_buffer, dstOffset, fillSize, data);
 		return;
 	}
@@ -500,7 +500,7 @@ void radv_CmdCopyBuffer(
 	RADV_FROM_HANDLE(radv_buffer, src_buffer, srcBuffer);
 	RADV_FROM_HANDLE(radv_buffer, dest_buffer, destBuffer);
 
-	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+	if (cmd_buffer->queue_family_index == RADV_QUEUE_TRANSFER) {
 		radv_cik_dma_copy_buffer(cmd_buffer, src_buffer, dest_buffer, regionCount, pRegions);
 		return;
 	}
@@ -558,7 +558,7 @@ void radv_CmdUpdateBuffer(
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
 	RADV_FROM_HANDLE(radv_buffer, dst_buffer, dstBuffer);
 
-	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+	if (cmd_buffer->queue_family_index == RADV_QUEUE_TRANSFER) {
 		radv_cik_dma_update_buffer(cmd_buffer, dst_buffer,
 					   dstOffset, dataSize, pData);
 	}
