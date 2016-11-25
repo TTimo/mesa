@@ -39,6 +39,28 @@ static void get_image_info(struct radv_cmd_buffer *cmd_buffer,
 	*va_p = va;
 }
 
+static unsigned encode_tile_info(struct radv_cmd_buffer *cmd_buffer,
+				 struct radv_image *image, unsigned level,
+				 bool set_bpp)
+{
+	struct radeon_info *info = &cmd_buffer->device->instance->physicalDevice.rad_info;
+	unsigned tile_index = image->surface.tiling_index[level];
+	unsigned macro_tile_index = image->surface.macro_tile_index;
+	unsigned tile_mode = info->si_tile_mode_array[tile_index];
+	unsigned macro_tile_mode = info->cik_macrotile_mode_array[macro_tile_index];
+
+	return (set_bpp ? util_logbase2(image->surface.bpe) : 0) |
+		(G_009910_ARRAY_MODE(tile_mode) << 3) |
+		(G_009910_MICRO_TILE_MODE_NEW(tile_mode) << 8) |
+		/* Non-depth modes don't have TILE_SPLIT set. */
+		((util_logbase2(image->surface.tile_split >> 6)) << 11) |
+		(G_009990_BANK_WIDTH(macro_tile_mode) << 15) |
+		(G_009990_BANK_HEIGHT(macro_tile_mode) << 18) |
+		(G_009990_NUM_BANKS(macro_tile_mode) << 21) |
+		(G_009990_MACRO_TILE_ASPECT(macro_tile_mode) << 24) |
+		(G_009910_PIPE_CONFIG(tile_mode) << 26);
+}
+
 /* L2L buffer->image + image->buffer */
 static void
 radv_cik_dma_copy_one_lin_to_lin(struct radv_cmd_buffer *cmd_buffer,
@@ -77,13 +99,13 @@ radv_cik_dma_copy_one_lin_to_lin(struct radv_cmd_buffer *cmd_buffer,
 	radeon_emit(cmd_buffer->cs, src_va);
 	radeon_emit(cmd_buffer->cs, src_va >> 32);
 	radeon_emit(cmd_buffer->cs, 0);
-	radeon_emit(cmd_buffer->cs, (region->bufferRowLength << 16));
-	radeon_emit(cmd_buffer->cs, (region->bufferImageHeight));
+	radeon_emit(cmd_buffer->cs, (((region->bufferRowLength / bpp) - 1) << 16));
+	radeon_emit(cmd_buffer->cs, region->bufferImageHeight - 1);
 	radeon_emit(cmd_buffer->cs, dst_va);
 	radeon_emit(cmd_buffer->cs, dst_va >> 32);
 	radeon_emit(cmd_buffer->cs, region->imageOffset.x | (region->imageOffset.y << 16));
-	radeon_emit(cmd_buffer->cs, zoffset | (pitch << 16));
-	radeon_emit(cmd_buffer->cs, slice_pitch);
+	radeon_emit(cmd_buffer->cs, zoffset | ((pitch - 1) << 16));
+	radeon_emit(cmd_buffer->cs, (slice_pitch - 1));
 	if (cmd_buffer->device->instance->physicalDevice.rad_info.chip_class == CIK) {
 		radeon_emit(cmd_buffer->cs, region->imageExtent.width | (region->imageExtent.height << 16));
 		radeon_emit(cmd_buffer->cs, depth);
@@ -109,6 +131,9 @@ radv_cik_dma_copy_one_lin_to_tiled(struct radv_cmd_buffer *cmd_buffer,
 	get_image_info(cmd_buffer, image, &region->imageSubresource, &img_va,
 		       &bpp, &pitch, &slice_pitch);
 
+	unsigned pitch_tile_max = pitch / 8 - 1;
+	unsigned slice_tile_max = slice_pitch / 64 - 1;
+
 	if (image->type == VK_IMAGE_TYPE_3D) {
 		depth = region->imageExtent.depth;
 		zoffset = region->imageOffset.z;
@@ -127,14 +152,14 @@ radv_cik_dma_copy_one_lin_to_tiled(struct radv_cmd_buffer *cmd_buffer,
 	radeon_emit(cmd_buffer->cs, img_va);
 	radeon_emit(cmd_buffer->cs, img_va >> 32);
 	radeon_emit(cmd_buffer->cs, region->imageOffset.x | (region->imageOffset.y << 16));
-	radeon_emit(cmd_buffer->cs, zoffset | (pitch << 16));
-	radeon_emit(cmd_buffer->cs, slice_pitch);
-	radeon_emit(cmd_buffer->cs, 0/*tileinfo*/);
+	radeon_emit(cmd_buffer->cs, zoffset | (pitch_tile_max << 16));
+	radeon_emit(cmd_buffer->cs, slice_tile_max);
+	radeon_emit(cmd_buffer->cs, encode_tile_info(cmd_buffer, image, region->imageSubresource.mipLevel, true));
 	radeon_emit(cmd_buffer->cs, buf_va);
 	radeon_emit(cmd_buffer->cs, buf_va >> 32);
 	radeon_emit(cmd_buffer->cs, 0/*x,y*/);
-	radeon_emit(cmd_buffer->cs, (region->bufferRowLength << 16));
-	radeon_emit(cmd_buffer->cs, region->bufferImageHeight);
+	radeon_emit(cmd_buffer->cs, (((region->bufferRowLength / bpp) - 1) << 16));
+	radeon_emit(cmd_buffer->cs, (region->bufferImageHeight - 1));
 	if (cmd_buffer->device->instance->physicalDevice.rad_info.chip_class == CIK) {
 		radeon_emit(cmd_buffer->cs, region->imageExtent.width | (region->imageExtent.height << 16));
 		radeon_emit(cmd_buffer->cs, depth);
@@ -227,13 +252,13 @@ radv_cik_dma_copy_one_image_lin_to_lin(struct radv_cmd_buffer *cmd_buffer,
 	radeon_emit(cmd_buffer->cs, src_va);
 	radeon_emit(cmd_buffer->cs, src_va >> 32);
 	radeon_emit(cmd_buffer->cs, region->srcOffset.x | (region->srcOffset.y << 16));
-	radeon_emit(cmd_buffer->cs, src_zoffset | (src_pitch << 16));
-	radeon_emit(cmd_buffer->cs, src_slice_pitch);
+	radeon_emit(cmd_buffer->cs, src_zoffset | ((src_pitch - 1) << 16));
+	radeon_emit(cmd_buffer->cs, src_slice_pitch - 1);
 	radeon_emit(cmd_buffer->cs, dst_va);
 	radeon_emit(cmd_buffer->cs, dst_va >> 32);
 	radeon_emit(cmd_buffer->cs, region->dstOffset.x | (region->dstOffset.y << 16));
-	radeon_emit(cmd_buffer->cs, dst_zoffset | (dst_pitch << 16));
-	radeon_emit(cmd_buffer->cs, dst_slice_pitch);
+	radeon_emit(cmd_buffer->cs, dst_zoffset | ((dst_pitch - 1) << 16));
+	radeon_emit(cmd_buffer->cs, dst_slice_pitch - 1);
 	if (cmd_buffer->device->instance->physicalDevice.rad_info.chip_class == CIK) {
 		radeon_emit(cmd_buffer->cs, region->extent.width | (region->extent.height << 16));
 		radeon_emit(cmd_buffer->cs, depth);
@@ -265,6 +290,9 @@ radv_cik_dma_copy_one_image_lin_to_tiled(struct radv_cmd_buffer *cmd_buffer,
 	get_image_info(cmd_buffer, til_image, til_sub_resource, &til_va,
 		       NULL, &til_pitch, &til_slice_pitch);
 
+	unsigned pitch_tile_max = til_pitch / 8 - 1;
+	unsigned slice_tile_max = til_slice_pitch / 64 - 1;
+
 	if (lin_image->type == VK_IMAGE_TYPE_3D) {
 		depth = extent->depth;
 		lin_zoffset = lin_offset->z;
@@ -285,14 +313,14 @@ radv_cik_dma_copy_one_image_lin_to_tiled(struct radv_cmd_buffer *cmd_buffer,
 	radeon_emit(cmd_buffer->cs, til_va);
 	radeon_emit(cmd_buffer->cs, til_va >> 32);
 	radeon_emit(cmd_buffer->cs, til_offset->x | (til_offset->y << 16));
-	radeon_emit(cmd_buffer->cs, til_zoffset | (til_pitch << 16));
-	radeon_emit(cmd_buffer->cs, til_slice_pitch);
-	radeon_emit(cmd_buffer->cs, 0/*tileinfo*/);
+	radeon_emit(cmd_buffer->cs, til_zoffset | (pitch_tile_max << 16));
+	radeon_emit(cmd_buffer->cs, slice_tile_max);
+	radeon_emit(cmd_buffer->cs, encode_tile_info(cmd_buffer, til_image, til_sub_resource->mipLevel, true));
 	radeon_emit(cmd_buffer->cs, lin_va);
 	radeon_emit(cmd_buffer->cs, lin_va >> 32);
 	radeon_emit(cmd_buffer->cs, lin_offset->x | (lin_offset->y << 16));
-	radeon_emit(cmd_buffer->cs, lin_zoffset | (lin_pitch << 16));
-	radeon_emit(cmd_buffer->cs, lin_slice_pitch);
+	radeon_emit(cmd_buffer->cs, lin_zoffset | ((lin_pitch - 1) << 16));
+	radeon_emit(cmd_buffer->cs, lin_slice_pitch - 1);
 	if (cmd_buffer->device->instance->physicalDevice.rad_info.chip_class == CIK) {
 		radeon_emit(cmd_buffer->cs, extent->width | (extent->height << 16));
 		radeon_emit(cmd_buffer->cs, depth);
@@ -319,6 +347,12 @@ radv_cik_dma_copy_one_image_tiled_to_tiled(struct radv_cmd_buffer *cmd_buffer,
 	get_image_info(cmd_buffer, dst_image, &region->dstSubresource, &dst_va,
 		       NULL, &dst_pitch, &dst_slice_pitch);
 
+	unsigned src_pitch_tile_max = src_pitch / 8 - 1;
+	unsigned src_slice_tile_max = src_slice_pitch / 64 - 1;
+
+	unsigned dst_pitch_tile_max = dst_pitch / 8 - 1;
+	unsigned dst_slice_tile_max = dst_slice_pitch / 64 - 1;
+
 	if (src_image->type == VK_IMAGE_TYPE_3D) {
 		depth = region->extent.depth;
 		src_zoffset = region->srcOffset.z;
@@ -338,15 +372,15 @@ radv_cik_dma_copy_one_image_tiled_to_tiled(struct radv_cmd_buffer *cmd_buffer,
 	radeon_emit(cmd_buffer->cs, src_va);
 	radeon_emit(cmd_buffer->cs, src_va >> 32);
 	radeon_emit(cmd_buffer->cs, region->srcOffset.x | (region->srcOffset.y << 16));
-	radeon_emit(cmd_buffer->cs, src_zoffset | (src_pitch << 16));
-	radeon_emit(cmd_buffer->cs, (src_slice_pitch << 16));
-	radeon_emit(cmd_buffer->cs, 0/*tileinfo*/);
+	radeon_emit(cmd_buffer->cs, src_zoffset | (src_pitch_tile_max << 16));
+	radeon_emit(cmd_buffer->cs, src_slice_tile_max);
+	radeon_emit(cmd_buffer->cs, encode_tile_info(cmd_buffer, src_image, region->srcSubresource.mipLevel, true));
 	radeon_emit(cmd_buffer->cs, dst_va);
 	radeon_emit(cmd_buffer->cs, dst_va >> 32);
 	radeon_emit(cmd_buffer->cs, region->dstOffset.x | (region->dstOffset.y << 16));
-	radeon_emit(cmd_buffer->cs, dst_zoffset | (dst_pitch << 16));
-	radeon_emit(cmd_buffer->cs, (dst_slice_pitch << 16));
-	radeon_emit(cmd_buffer->cs, 0/*tileinfo*/);
+	radeon_emit(cmd_buffer->cs, dst_zoffset | (dst_pitch_tile_max << 16));
+	radeon_emit(cmd_buffer->cs, dst_slice_tile_max);
+	radeon_emit(cmd_buffer->cs, encode_tile_info(cmd_buffer, dst_image, region->dstSubresource.mipLevel, false));
 	if (cmd_buffer->device->instance->physicalDevice.rad_info.chip_class == CIK) {
 		radeon_emit(cmd_buffer->cs, region->extent.width | (region->extent.height << 16));
 		radeon_emit(cmd_buffer->cs, depth);
