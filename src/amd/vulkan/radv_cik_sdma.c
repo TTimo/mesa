@@ -21,26 +21,31 @@ static const struct radeon_surf_level *get_base_level_info(struct radv_image *im
 
 /* L2L buffer->image */
 static void
-radv_cik_dma_copy_one_linbuf_to_linimg(struct radv_cmd_buffer *cmd_buffer,
-				       struct radv_buffer *src_buffer,
-				       struct radv_image *dest_image,
-				       unsigned bpp,
-				       const VkBufferImageCopy *region)
+radv_cik_dma_copy_one_lin_to_lin(struct radv_cmd_buffer *cmd_buffer,
+				 struct radv_buffer *buffer,
+				 struct radv_image *image,
+				 unsigned bpp,
+				 const VkBufferImageCopy *region,
+				 bool buf2img)
 {
-	uint64_t src_va = cmd_buffer->device->ws->buffer_get_va(src_buffer->bo);
-	uint64_t dst_va = cmd_buffer->device->ws->buffer_get_va(dest_image->bo);
+	uint64_t buf_va, img_va;
+	uint64_t src_va, dst_va;
 	unsigned depth;
 	unsigned zoffset;
-	const struct radeon_surf_level *base_level = get_base_level_info(dest_image,
+	const struct radeon_surf_level *base_level = get_base_level_info(image,
 									 region->imageSubresource.aspectMask,
 									 region->imageSubresource.mipLevel);
 	unsigned pitch = base_level->nblk_x;
 	unsigned slice_pitch = base_level->slice_size / bpp;
 
-	src_va = src_buffer->offset;
-	dst_va += dest_image->offset;
+	buf_va = cmd_buffer->device->ws->buffer_get_va(buffer->bo);
+	buf_va = buffer->offset;
+	buf_va += region->bufferOffset;
 
-	if (dest_image->type == VK_IMAGE_TYPE_3D) {
+	img_va = cmd_buffer->device->ws->buffer_get_va(image->bo);
+	img_va += image->offset;
+
+	if (image->type == VK_IMAGE_TYPE_3D) {
 		depth = region->imageExtent.depth;
 		zoffset = region->imageOffset.z;
 	} else {
@@ -48,7 +53,8 @@ radv_cik_dma_copy_one_linbuf_to_linimg(struct radv_cmd_buffer *cmd_buffer,
 		zoffset = region->imageSubresource.baseArrayLayer;
 	}
 
-	src_va += region->bufferOffset;
+	src_va = buf2img ? buf_va : img_va;
+	dst_va = buf2img ? img_va : buf_va;
 
 	radeon_emit(cmd_buffer->cs, CIK_SDMA_PACKET(CIK_SDMA_OPCODE_COPY,
 						    CIK_SDMA_COPY_SUB_OPCODE_LINEAR_SUB_WINDOW, 0) |
@@ -89,65 +95,12 @@ void radv_cik_dma_copy_buffer_to_image(struct radv_cmd_buffer *cmd_buffer,
 		unsigned bpp = vk_format_get_blocksize(format);
 
 		if (dest_image->surface.level[region->imageSubresource.mipLevel].mode == RADEON_SURF_MODE_LINEAR_ALIGNED) {
-			radv_cik_dma_copy_one_linbuf_to_linimg(cmd_buffer, src_buffer, dest_image,
-							       bpp, region);
+			radv_cik_dma_copy_one_lin_to_lin(cmd_buffer, src_buffer, dest_image,
+							 bpp, region, true);
 			/* L -> L  */
 		} else {
 			/* L -> T */
 		}
-	}
-}
-
-/* L2L buffer->image */
-static void
-radv_cik_dma_copy_one_linimg_to_linbuf(struct radv_cmd_buffer *cmd_buffer,
-				       struct radv_image *src_image,
-				       struct radv_buffer *dest_buffer,
-				       unsigned bpp,
-				       const VkBufferImageCopy *region)
-{
-	uint64_t src_va = cmd_buffer->device->ws->buffer_get_va(src_image->bo);
-	uint64_t dst_va = cmd_buffer->device->ws->buffer_get_va(dest_buffer->bo);
-	unsigned depth;
-	unsigned zoffset;
-	const struct radeon_surf_level *base_level = get_base_level_info(src_image,
-									 region->imageSubresource.aspectMask,
-									 region->imageSubresource.mipLevel);
-	unsigned pitch = base_level->nblk_x;
-	unsigned slice_pitch = base_level->slice_size / bpp;
-
-	src_va = dest_buffer->offset;
-	dst_va += src_image->offset;
-
-	if (src_image->type == VK_IMAGE_TYPE_3D) {
-		depth = region->imageExtent.depth;
-		zoffset = region->imageOffset.z;
-	} else {
-		depth = region->imageSubresource.layerCount;
-		zoffset = region->imageSubresource.baseArrayLayer;
-	}
-
-	dst_va += region->bufferOffset;
-
-	radeon_emit(cmd_buffer->cs, CIK_SDMA_PACKET(CIK_SDMA_OPCODE_COPY,
-						    CIK_SDMA_COPY_SUB_OPCODE_LINEAR_SUB_WINDOW, 0) |
-		    (util_logbase2(bpp) << 29));
-	radeon_emit(cmd_buffer->cs, src_va);
-	radeon_emit(cmd_buffer->cs, src_va >> 32);
-	radeon_emit(cmd_buffer->cs, 0);
-	radeon_emit(cmd_buffer->cs, (region->bufferRowLength << 16));
-	radeon_emit(cmd_buffer->cs, (region->bufferImageHeight));
-	radeon_emit(cmd_buffer->cs, dst_va);
-	radeon_emit(cmd_buffer->cs, dst_va >> 32);
-	radeon_emit(cmd_buffer->cs, region->imageOffset.x | (region->imageOffset.y << 16));
-	radeon_emit(cmd_buffer->cs, zoffset | (pitch << 16));
-	radeon_emit(cmd_buffer->cs, slice_pitch);
-	if (cmd_buffer->device->instance->physicalDevice.rad_info.chip_class == CIK) {
-		radeon_emit(cmd_buffer->cs, region->imageExtent.width | (region->imageExtent.height << 16));
-		radeon_emit(cmd_buffer->cs, depth);
-	} else {
-		radeon_emit(cmd_buffer->cs, (region->imageExtent.width -1) | ((region->imageExtent.height - 1) << 16));
-		radeon_emit(cmd_buffer->cs, (depth - 1));
 	}
 }
 
@@ -164,8 +117,8 @@ void radv_cik_dma_copy_image_to_buffer(struct radv_cmd_buffer *cmd_buffer,
 		unsigned bpp = vk_format_get_blocksize(format);
 
 		if (src_image->surface.level[region->imageSubresource.mipLevel].mode == RADEON_SURF_MODE_LINEAR_ALIGNED) {
-			radv_cik_dma_copy_one_linimg_to_linbuf(cmd_buffer, src_image, dest_buffer,
-							       bpp, region);
+			radv_cik_dma_copy_one_lin_to_lin(cmd_buffer, dest_buffer, src_image,
+							 bpp, region, false);
 			/* L -> L */
 		} else {
 			/* T -> L */
