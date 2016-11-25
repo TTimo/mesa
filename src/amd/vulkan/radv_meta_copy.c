@@ -205,6 +205,13 @@ void radv_CmdCopyBufferToImage(
 	RADV_FROM_HANDLE(radv_image, dest_image, destImage);
 	RADV_FROM_HANDLE(radv_buffer, src_buffer, srcBuffer);
 
+	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+		radv_cik_dma_copy_buffer_to_image(cmd_buffer, src_buffer,
+						  dest_image, regionCount,
+						  pRegions);
+		return;
+	}
+
 	meta_copy_buffer_to_image(cmd_buffer, src_buffer, dest_image,
 				  regionCount, pRegions);
 }
@@ -302,22 +309,26 @@ void radv_CmdCopyImageToBuffer(
 	RADV_FROM_HANDLE(radv_image, src_image, srcImage);
 	RADV_FROM_HANDLE(radv_buffer, dst_buffer, destBuffer);
 
+	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+		radv_cik_dma_copy_image_to_buffer(cmd_buffer, src_image,
+						  dst_buffer, regionCount,
+						  pRegions);
+		return;
+	}
+
 	meta_copy_image_to_buffer(cmd_buffer, dst_buffer, src_image,
 				  regionCount, pRegions);
 }
 
-void radv_CmdCopyImage(
-	VkCommandBuffer                             commandBuffer,
-	VkImage                                     srcImage,
-	VkImageLayout                               srcImageLayout,
-	VkImage                                     destImage,
-	VkImageLayout                               destImageLayout,
-	uint32_t                                    regionCount,
-	const VkImageCopy*                          pRegions)
+static void
+radv_meta_copy_image(struct radv_cmd_buffer *cmd_buffer,
+		     struct radv_image *src_image,
+		     VkImageLayout srcImageLayout,
+		     struct radv_image *dest_image,
+		     VkImageLayout destImageLayout,
+		     uint32_t regionCount,
+		     const VkImageCopy *pRegions)
 {
-	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
-	RADV_FROM_HANDLE(radv_image, src_image, srcImage);
-	RADV_FROM_HANDLE(radv_image, dest_image, destImage);
 	struct radv_meta_saved_state saved_state;
 
 	/* From the Vulkan 1.0 spec:
@@ -396,4 +407,28 @@ void radv_CmdCopyImage(
 	}
 
 	radv_meta_restore(&saved_state, cmd_buffer);
+}
+
+void radv_CmdCopyImage(
+	VkCommandBuffer                             commandBuffer,
+	VkImage                                     srcImage,
+	VkImageLayout                               srcImageLayout,
+	VkImage                                     destImage,
+	VkImageLayout                               destImageLayout,
+	uint32_t                                    regionCount,
+	const VkImageCopy*                          pRegions)
+{
+	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
+	RADV_FROM_HANDLE(radv_image, src_image, srcImage);
+	RADV_FROM_HANDLE(radv_image, dest_image, destImage);
+
+	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+		radv_cik_dma_copy_image(cmd_buffer, src_image, srcImageLayout,
+					dest_image, destImageLayout,
+					regionCount, pRegions);
+		return;
+	}
+	return radv_meta_copy_image(cmd_buffer, src_image, srcImageLayout,
+				    dest_image, destImageLayout,
+				    regionCount, pRegions);
 }

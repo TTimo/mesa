@@ -496,6 +496,10 @@ void radv_CmdCopyBuffer(
 	RADV_FROM_HANDLE(radv_buffer, src_buffer, srcBuffer);
 	RADV_FROM_HANDLE(radv_buffer, dest_buffer, destBuffer);
 
+	if (cmd_buffer->pool->queue_family_index == RADV_QUEUE_TRANSFER) {
+		radv_cik_dma_copy_buffer(cmd_buffer, src_buffer, dest_buffer, regionCount, pRegions);
+		return;
+	}
 	for (unsigned r = 0; r < regionCount; r++) {
 		uint64_t src_offset = src_buffer->offset + pRegions[r].srcOffset;
 		uint64_t dest_offset = dest_buffer->offset + pRegions[r].dstOffset;
