@@ -1252,6 +1252,18 @@ void radv_cik_dma_copy_buffer(struct radv_cmd_buffer *cmd_buffer,
 			      uint32_t region_count,
 			      const VkBufferCopy *pRegions);
 
+void radv_cik_dma_update_buffer(struct radv_cmd_buffer *cmd_buffer,
+				struct radv_buffer *dst_buffer,
+				VkDeviceSize dst_offset,
+				VkDeviceSize data_size,
+				const void *data);
+
+void radv_cik_dma_fill_buffer(struct radv_cmd_buffer *cmd_buffer,
+			      struct radv_buffer *dst_buffer,
+			      VkDeviceSize dst_offset,
+			      VkDeviceSize fillSize,
+			      uint32_t data);
+
 #define RADV_DEFINE_HANDLE_CASTS(__radv_type, __VkType)		\
 								\
 	static inline struct __radv_type *			\

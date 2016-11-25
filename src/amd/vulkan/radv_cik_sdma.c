@@ -497,3 +497,21 @@ void radv_cik_dma_copy_buffer(struct radv_cmd_buffer *cmd_buffer,
 						 dest_buffer,
 						 &pRegions[r]);
 }
+
+void radv_cik_dma_update_buffer(struct radv_cmd_buffer *cmd_buffer,
+				struct radv_buffer *dst_buffer,
+				VkDeviceSize dst_offset,
+				VkDeviceSize data_size,
+				const void *data)
+{
+	radv_finishme("SDMA update buffer");
+}
+
+void radv_cik_dma_fill_buffer(struct radv_cmd_buffer *cmd_buffer,
+			      struct radv_buffer *dst_buffer,
+			      VkDeviceSize dst_offset,
+			      VkDeviceSize fillSize,
+			      uint32_t data)
+{
+	radv_finishme("SDMA fill buffer");
+}
