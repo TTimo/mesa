@@ -579,7 +579,7 @@ void radv_GetPhysicalDeviceQueueFamilyProperties(
 			.queueFlags = VK_QUEUE_TRANSFER_BIT,
 			.queueCount = 1,
 			.timestampValidBits = 64,
-			.minImageTransferGranularity = (VkExtent3D) { 1, 1, 1 },
+			.minImageTransferGranularity = (VkExtent3D) { 8, 8, 8 },
 		};
 	}
 }
