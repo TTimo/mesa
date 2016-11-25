@@ -1485,7 +1485,9 @@ VkResult radv_EndCommandBuffer(
 {
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
 
-	si_emit_cache_flush(cmd_buffer);
+	if (cmd_buffer->queue_family_index == 0) {
+		si_emit_cache_flush(cmd_buffer);
+	}
 
 	if (cmd_buffer->level == VK_COMMAND_BUFFER_LEVEL_PRIMARY && cmd_buffer->scratch_size_needed) {
 		int idx = cmd_buffer->scratch_patch_idx;
