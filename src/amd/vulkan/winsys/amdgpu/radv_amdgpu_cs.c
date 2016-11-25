@@ -76,6 +76,16 @@ static void radv_amdgpu_destroy_fence(struct radeon_winsys_fence *_fence)
 	free(fence);
 }
 
+static void radv_amdgpu_request_to_fence(struct radv_amdgpu_ctx *ctx,
+					 struct amdgpu_cs_fence *fence,
+					 struct amdgpu_cs_request *req)
+{
+	fence->context = ctx->ctx;
+	fence->ip_type = req->ip_type;
+	fence->ip_instance = req->ip_instance;
+	fence->ring = req->ring;
+	fence->fence = req->seq_no;
+}
 static bool radv_amdgpu_fence_wait(struct radeon_winsys *_ws,
 			      struct radeon_winsys_fence *_fence,
 			      bool absolute,
@@ -552,14 +562,12 @@ static int radv_amdgpu_winsys_cs_submit_chained(struct radeon_winsys_ctx *_ctx,
 	amdgpu_bo_list_destroy(bo_list);
 
 	if (fence) {
-		fence->context = ctx->ctx;
-		fence->ip_type = request.ip_type;
-		fence->ip_instance = request.ip_instance;
-		fence->ring = request.ring;
-		fence->fence = request.seq_no;
+		radv_amdgpu_request_to_fence(ctx, fence, &request);
 	}
-	ctx->last_seq_no = request.seq_no;
 
+	int idx = request.ip_type == AMDGPU_HW_IP_GFX ? 0 : 1;
+	radv_amdgpu_request_to_fence(ctx, &ctx->last_submission[idx], &request);
+	ctx->last_submission_idx = idx;
 	return r;
 }
 
@@ -621,14 +629,12 @@ static int radv_amdgpu_winsys_cs_submit_fallback(struct radeon_winsys_ctx *_ctx,
 		i += cnt;
 	}
 	if (fence) {
-		fence->context = ctx->ctx;
-		fence->ip_type = request.ip_type;
-		fence->ip_instance = request.ip_instance;
-		fence->ring = request.ring;
-		fence->fence = request.seq_no;
+		radv_amdgpu_request_to_fence(ctx, fence, &request);
 	}
-	ctx->last_seq_no = request.seq_no;
 
+	int idx = request.ip_type == AMDGPU_HW_IP_GFX ? 0 : 1;
+	radv_amdgpu_request_to_fence(ctx, &ctx->last_submission[idx], &request);
+	ctx->last_submission_idx = idx;
 	return 0;
 }
 
@@ -716,14 +722,12 @@ static int radv_amdgpu_winsys_cs_submit_sysmem(struct radeon_winsys_ctx *_ctx,
 		i += cnt;
 	}
 	if (fence) {
-		fence->context = ctx->ctx;
-		fence->ip_type = request.ip_type;
-		fence->ip_instance = request.ip_instance;
-		fence->ring = request.ring;
-		fence->fence = request.seq_no;
+		radv_amdgpu_request_to_fence(ctx, fence, &request);
 	}
-	ctx->last_seq_no = request.seq_no;
 
+	int idx = request.ip_type == AMDGPU_HW_IP_GFX ? 0 : 1;
+	radv_amdgpu_request_to_fence(ctx, &ctx->last_submission[idx], &request);
+	ctx->last_submission_idx = idx;
 	return 0;
 }
 
@@ -772,21 +776,22 @@ static void radv_amdgpu_ctx_destroy(struct radeon_winsys_ctx *rwctx)
 	FREE(ctx);
 }
 
-static bool radv_amdgpu_ctx_wait_idle(struct radeon_winsys_ctx *rwctx)
+static bool radv_amdgpu_ctx_wait_idle(struct radeon_winsys_ctx *rwctx, int ring)
 {
 	struct radv_amdgpu_ctx *ctx = (struct radv_amdgpu_ctx *)rwctx;
-
-	if (ctx->last_seq_no) {
+	int queue_idx = 0;
+	if (ring == -1) {
+		queue_idx = ctx->last_submission_idx;
+	} else {
+		if (ring == RING_GFX)
+			queue_idx = 0;
+		if (ring == RING_DMA)
+			queue_idx = 1;
+	}
+	if (ctx->last_submission[queue_idx].fence) {
 		uint32_t expired;
-		struct amdgpu_cs_fence fence;
 
-		fence.context = ctx->ctx;
-		fence.ip_type = AMDGPU_HW_IP_GFX;
-		fence.ip_instance = 0;
-		fence.ring = 0;
-		fence.fence = ctx->last_seq_no;
-
-		int ret = amdgpu_cs_query_fence_status(&fence, 1000000000ull, 0,
+		int ret = amdgpu_cs_query_fence_status(&ctx->last_submission[queue_idx], 1000000000ull, 0,
 						       &expired);
 
 		if (ret || !expired)

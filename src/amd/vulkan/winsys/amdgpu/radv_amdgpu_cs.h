@@ -41,7 +41,9 @@
 struct radv_amdgpu_ctx {
 	struct radv_amdgpu_winsys *ws;
 	amdgpu_context_handle ctx;
-	uint64_t last_seq_no;
+
+	struct amdgpu_cs_fence last_submission[2];
+	uint32_t last_submission_idx;
 };
 
 static inline struct radv_amdgpu_ctx *

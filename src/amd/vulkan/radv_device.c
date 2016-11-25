@@ -886,7 +886,7 @@ VkResult radv_QueueWaitIdle(
 {
 	RADV_FROM_HANDLE(radv_queue, queue, _queue);
 
-	queue->device->ws->ctx_wait_idle(queue->device->hw_ctx);
+	queue->device->ws->ctx_wait_idle(queue->device->hw_ctx, queue->queue_family_index == RADV_QUEUE_GENERAL ? RING_GFX : RING_DMA);
 	return VK_SUCCESS;
 }
 
@@ -895,7 +895,7 @@ VkResult radv_DeviceWaitIdle(
 {
 	RADV_FROM_HANDLE(radv_device, device, _device);
 
-	device->ws->ctx_wait_idle(device->hw_ctx);
+	device->ws->ctx_wait_idle(device->hw_ctx, -1);
 	return VK_SUCCESS;
 }
 
