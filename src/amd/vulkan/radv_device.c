@@ -550,20 +550,38 @@ void radv_GetPhysicalDeviceQueueFamilyProperties(
 	uint32_t*                                   pCount,
 	VkQueueFamilyProperties*                    pQueueFamilyProperties)
 {
+	RADV_FROM_HANDLE(radv_physical_device, pdevice, physicalDevice);
+
 	if (pQueueFamilyProperties == NULL) {
-		*pCount = 1;
+		if (pdevice->rad_info.chip_class >= CIK)
+			*pCount = 2;
+		else
+			*pCount = 1;
 		return;
 	}
-	assert(*pCount >= 1);
 
-	*pQueueFamilyProperties = (VkQueueFamilyProperties) {
-		.queueFlags = VK_QUEUE_GRAPHICS_BIT |
-		VK_QUEUE_COMPUTE_BIT |
-		VK_QUEUE_TRANSFER_BIT,
-		.queueCount = 1,
-		.timestampValidBits = 64,
-		.minImageTransferGranularity = (VkExtent3D) { 1, 1, 1 },
-	};
+	if (!*pCount)
+		return;
+
+	if (*pCount >= 1) {
+		pQueueFamilyProperties[0] = (VkQueueFamilyProperties) {
+			.queueFlags = VK_QUEUE_GRAPHICS_BIT |
+			VK_QUEUE_COMPUTE_BIT |
+			VK_QUEUE_TRANSFER_BIT,
+			.queueCount = 1,
+			.timestampValidBits = 64,
+			.minImageTransferGranularity = (VkExtent3D) { 1, 1, 1 },
+		};
+	}
+
+	if (*pCount == 2) {
+		pQueueFamilyProperties[1] = (VkQueueFamilyProperties) {
+			.queueFlags = VK_QUEUE_TRANSFER_BIT,
+			.queueCount = 1,
+			.timestampValidBits = 64,
+			.minImageTransferGranularity = (VkExtent3D) { 1, 1, 1 },
+		};
+	}
 }
 
 void radv_GetPhysicalDeviceMemoryProperties(
@@ -612,10 +630,11 @@ void radv_GetPhysicalDeviceMemoryProperties(
 }
 
 static VkResult
-radv_queue_init(struct radv_device *device, struct radv_queue *queue)
+radv_queue_init(struct radv_device *device, struct radv_queue *queue, int queue_family_index)
 {
 	queue->_loader_data.loaderMagic = ICD_LOADER_MAGIC;
 	queue->device = device;
+	queue->queue_family_index = queue_family_index;
 
 	return VK_SUCCESS;
 }
@@ -669,7 +688,11 @@ VkResult radv_CreateDevice(
 		goto fail_free;
 	}
 
-	radv_queue_init(device, &device->queue);
+	for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
+		const VkDeviceQueueCreateInfo *queue_create = &pCreateInfo->pQueueCreateInfos[i];
+		uint32_t qfi = queue_create->queueFamilyIndex;
+		radv_queue_init(device, &device->queue[qfi], qfi);
+	}
 
 	result = radv_device_init_meta(device);
 	if (result != VK_SUCCESS) {
@@ -719,7 +742,9 @@ void radv_DestroyDevice(
 	RADV_FROM_HANDLE(radv_device, device, _device);
 
 	device->ws->ctx_destroy(device->hw_ctx);
-	radv_queue_finish(&device->queue);
+	for (unsigned i = 0; i < RADV_MAX_QUEUES; i++)
+		radv_queue_finish(&device->queue[i]);
+
 	radv_device_finish_meta(device);
 
 	vk_free(&device->alloc, device);
@@ -803,9 +828,7 @@ void radv_GetDeviceQueue(
 {
 	RADV_FROM_HANDLE(radv_device, device, _device);
 
-	assert(queueIndex == 0);
-
-	*pQueue = radv_queue_to_handle(&device->queue);
+	*pQueue = radv_queue_to_handle(&device->queue[queueIndex]);
 }
 
 VkResult radv_QueueSubmit(
