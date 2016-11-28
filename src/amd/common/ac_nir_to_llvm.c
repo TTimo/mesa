@@ -376,7 +376,8 @@ static void set_userdata_location_indirect(struct ac_userdata_info *ud_info, uin
 }
 #endif
 
-static void create_function(struct nir_to_llvm_context *ctx)
+static void create_function(struct nir_to_llvm_context *ctx,
+			    struct shader_info *info)
 {
 	LLVMTypeRef arg_types[23];
 	unsigned arg_idx = 0;
@@ -418,7 +419,8 @@ static void create_function(struct nir_to_llvm_context *ctx)
 
 	switch (ctx->stage) {
 	case MESA_SHADER_COMPUTE:
-		arg_types[arg_idx++] = LLVMVectorType(ctx->i32, 3); /* grid size */
+		if (info->cs.has_load_num_work_groups)
+			arg_types[arg_idx++] = LLVMVectorType(ctx->i32, 3); /* grid size */
 		user_sgpr_count = arg_idx;
 		arg_types[arg_idx++] = LLVMVectorType(ctx->i32, 3);
 		arg_types[arg_idx++] = ctx->i32;
@@ -437,7 +439,9 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		arg_types[arg_idx++] = ctx->i32; // instance id
 		break;
 	case MESA_SHADER_FRAGMENT:
-		arg_types[arg_idx++] = const_array(ctx->f32, 32); /* sample positions */
+		if (info->fs.has_interp_var_at_sample) {
+			arg_types[arg_idx++] = const_array(ctx->f32, 32); /* sample positions */
+		}
 		user_sgpr_count = arg_idx;
 		arg_types[arg_idx++] = ctx->i32; /* prim mask */
 		sgpr_count = arg_idx;
@@ -511,10 +515,12 @@ static void create_function(struct nir_to_llvm_context *ctx)
 
 	switch (ctx->stage) {
 	case MESA_SHADER_COMPUTE:
-		set_userdata_location_shader(ctx, AC_UD_CS_GRID_SIZE, user_sgpr_idx, 3);
-		user_sgpr_idx += 3;
-		ctx->num_work_groups =
-		    LLVMGetParam(ctx->main_function, arg_idx++);
+		if (info->cs.has_load_num_work_groups) {
+			set_userdata_location_shader(ctx, AC_UD_CS_GRID_SIZE, user_sgpr_idx, 3);
+			user_sgpr_idx += 3;
+			ctx->num_work_groups =
+				LLVMGetParam(ctx->main_function, arg_idx++);
+		}
 		ctx->workgroup_ids =
 		    LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->tg_size =
@@ -536,9 +542,11 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		ctx->instance_id = LLVMGetParam(ctx->main_function, arg_idx++);
 		break;
 	case MESA_SHADER_FRAGMENT:
-		set_userdata_location_shader(ctx, AC_UD_PS_SAMPLE_POS, user_sgpr_idx, 2);
-		user_sgpr_idx += 2;
-		ctx->sample_positions = LLVMGetParam(ctx->main_function, arg_idx++);
+		if (info->fs.has_interp_var_at_sample) {
+			set_userdata_location_shader(ctx, AC_UD_PS_SAMPLE_POS, user_sgpr_idx, 2);
+			user_sgpr_idx += 2;
+			ctx->sample_positions = LLVMGetParam(ctx->main_function, arg_idx++);
+		}
 		ctx->prim_mask = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->persp_sample = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->persp_center = LLVMGetParam(ctx->main_function, arg_idx++);
@@ -4459,7 +4467,7 @@ LLVMModuleRef ac_translate_nir_to_llvm(LLVMTargetMachineRef tm,
 	for (i = 0; i < AC_UD_MAX_UD; i++)
 		shader_info->user_sgprs_locs.shader_data[i].sgpr_idx = -1;
 
-	create_function(&ctx);
+	create_function(&ctx, nir->info);
 
 	if (nir->stage == MESA_SHADER_COMPUTE) {
 		int num_shared = 0;
