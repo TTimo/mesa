@@ -194,12 +194,28 @@ static void
 gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader)
 {
    switch (instr->intrinsic) {
+   case nir_intrinsic_interp_var_at_sample:
+      assert(shader->stage == MESA_SHADER_FRAGMENT);
+      shader->info->fs.has_interp_var_at_sample = true;
+      break;
+   case nir_intrinsic_load_num_work_groups:
+      assert(shader->stage == MESA_SHADER_COMPUTE);
+      shader->info->cs.has_load_num_work_groups = true;
+      break;
    case nir_intrinsic_discard:
    case nir_intrinsic_discard_if:
       assert(shader->stage == MESA_SHADER_FRAGMENT);
       shader->info->fs.uses_discard = true;
       break;
-
+   case nir_intrinsic_end_primitive:
+   case nir_intrinsic_end_primitive_with_counter:
+      assert(shader->stage == MESA_SHADER_GEOMETRY);
+      shader->info->gs.uses_end_primitive = 1;
+      break;
+   default:
+      break;
+   }
+   switch (instr->intrinsic) {
    case nir_intrinsic_interp_var_at_centroid:
    case nir_intrinsic_interp_var_at_sample:
    case nir_intrinsic_interp_var_at_offset:
@@ -247,12 +263,6 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader)
    case nir_intrinsic_load_tess_level_inner:
       shader->info->system_values_read |=
          (1 << nir_system_value_from_intrinsic(instr->intrinsic));
-      break;
-
-   case nir_intrinsic_end_primitive:
-   case nir_intrinsic_end_primitive_with_counter:
-      assert(shader->stage == MESA_SHADER_GEOMETRY);
-      shader->info->gs.uses_end_primitive = 1;
       break;
 
    default:

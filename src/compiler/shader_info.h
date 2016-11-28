@@ -127,6 +127,8 @@ typedef struct shader_info {
 
          bool post_depth_coverage;
 
+	 bool has_interp_var_at_sample;
+
          /** gl_FragDepth layout for ARB_conservative_depth. */
          enum gl_frag_depth_layout depth_layout;
       } fs;
@@ -140,6 +142,11 @@ typedef struct shader_info {
           * Size of shared variables accessed by the compute shader.
           */
          unsigned shared_size;
+
+	 /*
+	  *
+	  */
+        bool has_load_num_work_groups;
       } cs;
 
       /* Applies to both TCS and TES. */
