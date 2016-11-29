@@ -396,8 +396,6 @@ static void radv_fill_shader_variant(struct radv_device *device,
 	void *ptr = device->ws->buffer_map(variant->bo);
 	memcpy(ptr, binary->code, binary->code_size);
 	device->ws->buffer_unmap(variant->bo);
-
-
 }
 
 static struct radv_shader_variant *radv_shader_variant_create(struct radv_device *device,
@@ -498,6 +496,39 @@ radv_pipeline_compile(struct radv_pipeline *pipeline,
 		free(code);
 	return variant;
 }
+
+static struct radv_shader_variant *
+radv_pipeline_create_gs_copy_shader(struct radv_pipeline *pipeline,
+				    struct radv_shader_module *module,
+				    bool dump_shader)
+{
+	struct radv_shader_variant *variant = calloc(1, sizeof(struct radv_shader_variant));
+	enum radeon_family chip_family = pipeline->device->instance->physicalDevice.rad_info.family;
+	LLVMTargetMachineRef tm;
+	if (!variant)
+		return NULL;
+
+	struct ac_nir_compiler_options options = {0};
+	struct ac_shader_binary binary;
+	options.family = chip_family;
+	options.chip_class = pipeline->device->instance->physicalDevice.rad_info.chip_class;
+
+	tm = ac_create_target_machine(chip_family);
+	ac_create_gs_copy_shader(tm, &binary, &variant->config, &variant->info, &options, dump_shader);
+	LLVMDisposeTargetMachine(tm);
+
+	radv_fill_shader_variant(pipeline->device, variant, &binary, MESA_SHADER_VERTEX);
+
+	free(binary.code);
+	free(binary.config);
+	free(binary.rodata);
+	free(binary.global_symbol_offsets);
+	free(binary.relocs);
+	free(binary.disasm_string);
+	variant->ref_count = 1;
+	return variant;	
+}
+
 
 static uint32_t si_translate_blend_function(VkBlendOp op)
 {
@@ -1358,6 +1389,9 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 					       pipeline->layout, &key, dump);
 
 		pipeline->active_stages |= mesa_to_vk_shader_stage(MESA_SHADER_GEOMETRY);
+
+		pipeline->gs_copy_shader = radv_pipeline_create_gs_copy_shader(pipeline,
+									       modules[MESA_SHADER_GEOMETRY], dump);
 	}
 
 	if (!modules[MESA_SHADER_FRAGMENT]) {

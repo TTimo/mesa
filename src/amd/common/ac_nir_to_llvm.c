@@ -151,7 +151,7 @@ struct nir_to_llvm_context {
 	unsigned num_culls;
 
 	bool has_ds_bpermute;
-
+	bool is_gs_copy_shader;
 	unsigned gs_max_out_vertices;
 };
 
@@ -470,7 +470,8 @@ static void create_function(struct nir_to_llvm_context *ctx,
 
 	need_ring_offsets = false;
 	if (ctx->stage == MESA_SHADER_GEOMETRY ||
-	    (ctx->stage == MESA_SHADER_VERTEX && ctx->options->key.vs.as_es))
+	    (ctx->stage == MESA_SHADER_VERTEX && ctx->options->key.vs.as_es) ||
+	    ctx->is_gs_copy_shader)
 		need_ring_offsets = true;
 
 	need_push_constants = true;
@@ -4740,6 +4741,9 @@ ac_setup_rings(struct nir_to_llvm_context *ctx)
 		ctx->esgs_ring = build_indexed_load_const(ctx, ctx->ring_offsets, ctx->i32zero);
 	}
 
+	if (ctx->is_gs_copy_shader) {
+		ctx->gsvs_ring[0] = build_indexed_load_const(ctx, ctx->ring_offsets, ctx->i32one);
+	}
 	if (ctx->stage == MESA_SHADER_GEOMETRY) {
 		for (i = 0; i < 4; i++) {
 			ctx->gsvs_ring[i] = build_indexed_load_const(ctx, ctx->ring_offsets, LLVMConstInt(ctx->i32, i + 1, false));
@@ -5028,4 +5032,35 @@ void ac_compile_nir_shader(LLVMTargetMachineRef tm,
 	default:
 		break;
 	}
+}
+
+void ac_create_gs_copy_shader(LLVMTargetMachineRef tm,
+			      struct ac_shader_binary *binary,
+			      struct ac_shader_config *config,
+			      struct ac_shader_variant_info *shader_info,
+			      const struct ac_nir_compiler_options *options,
+			      bool dump_shader)
+{
+	struct nir_to_llvm_context ctx = {0};
+	ctx.context = LLVMContextCreate();
+	ctx.module = LLVMModuleCreateWithNameInContext("shader", ctx.context);
+	ctx.options = options;
+	ctx.shader_info = shader_info;
+	ctx.is_gs_copy_shader = true;
+	LLVMSetTarget(ctx.module, "amdgcn--");
+	setup_types(&ctx);
+
+	ctx.builder = LLVMCreateBuilderInContext(ctx.context);
+	ctx.stage = MESA_SHADER_VERTEX;
+
+	create_function(&ctx, NULL);
+
+	ac_setup_rings(&ctx);
+
+	LLVMBuildRetVoid(ctx.builder);
+
+	ac_llvm_finalize_module(&ctx);
+
+	ac_compile_llvm_module(tm, ctx.module, binary, config, shader_info, MESA_SHADER_VERTEX,
+			       dump_shader);
 }

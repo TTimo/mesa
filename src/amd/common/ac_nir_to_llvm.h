@@ -132,3 +132,9 @@ void ac_compile_nir_shader(LLVMTargetMachineRef tm,
 			   bool dump_shader);
 
 
+void ac_create_gs_copy_shader(LLVMTargetMachineRef tm,
+			      struct ac_shader_binary *binary,
+			      struct ac_shader_config *config,
+			      struct ac_shader_variant_info *shader_info,
+			      const struct ac_nir_compiler_options *options,
+			      bool dump_shader);

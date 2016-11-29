@@ -920,6 +920,7 @@ struct radv_pipeline {
 	bool                                         needs_data_cache;
 
 	struct radv_shader_variant *                 shaders[MESA_SHADER_STAGES];
+	struct radv_shader_variant *gs_copy_shader;
 	VkShaderStageFlags                           active_stages;
 
 	uint32_t va_rsrc_word3[MAX_VERTEX_ATTRIBS];
