@@ -269,6 +269,7 @@ static const char *radv_get_shader_name(struct radv_shader_variant *var,
 {
 	switch (stage) {
 	case MESA_SHADER_VERTEX: return "Vertex Shader as VS";
+	case MESA_SHADER_GEOMETRY: return "Geometry Shader";
 	case MESA_SHADER_FRAGMENT: return "Pixel Shader";
 	case MESA_SHADER_COMPUTE: return "Compute Shader";
 	default:
@@ -1285,13 +1286,14 @@ radv_pipeline_init_dynamic_state(struct radv_pipeline *pipeline,
 }
 
 static union ac_shader_variant_key
-radv_compute_vs_key(const VkGraphicsPipelineCreateInfo *pCreateInfo)
+radv_compute_vs_key(const VkGraphicsPipelineCreateInfo *pCreateInfo, bool as_es)
 {
 	union ac_shader_variant_key key;
 	const VkPipelineVertexInputStateCreateInfo *input_state =
 	                                         pCreateInfo->pVertexInputState;
 
 	memset(&key, 0, sizeof(key));
+	key.vs.as_es = as_es;
 	key.vs.instance_rate_inputs = 0;
 
 	for (unsigned i = 0; i < input_state->vertexAttributeDescriptionCount; ++i) {
@@ -1332,7 +1334,8 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 
 	/* */
 	if (modules[MESA_SHADER_VERTEX]) {
-		union ac_shader_variant_key key = radv_compute_vs_key(pCreateInfo);
+		bool as_es = modules[MESA_SHADER_GEOMETRY] != NULL;
+		union ac_shader_variant_key key = radv_compute_vs_key(pCreateInfo, as_es);
 
 		pipeline->shaders[MESA_SHADER_VERTEX] =
 			 radv_pipeline_compile(pipeline, cache, modules[MESA_SHADER_VERTEX],
@@ -1345,7 +1348,7 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 	}
 
 	if (modules[MESA_SHADER_GEOMETRY]) {
-		union ac_shader_variant_key key = radv_compute_vs_key(pCreateInfo);
+		union ac_shader_variant_key key = radv_compute_vs_key(pCreateInfo, false);
 
 		pipeline->shaders[MESA_SHADER_GEOMETRY] =
 			 radv_pipeline_compile(pipeline, cache, modules[MESA_SHADER_GEOMETRY],

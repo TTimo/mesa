@@ -36,6 +36,7 @@ struct radv_pipeline_layout;
 
 struct ac_vs_variant_key {
 	uint32_t instance_rate_inputs;
+	uint32_t as_es:1;
 };
 
 struct ac_fs_variant_key {

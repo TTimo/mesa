@@ -87,6 +87,8 @@ struct nir_to_llvm_context {
 	LLVMValueRef vs_prim_id;
 	LLVMValueRef instance_id;
 
+	LLVMValueRef es2gs_offset;
+
 	LLVMValueRef gs_next_vertex[4];
 	LLVMValueRef gs2vs_offset;
 	LLVMValueRef gs_wave_id;
@@ -464,6 +466,12 @@ static void create_function(struct nir_to_llvm_context *ctx,
 	unsigned num_sets = ctx->options->layout ? ctx->options->layout->num_sets : 0;
 	unsigned user_sgpr_idx;
 	bool need_push_constants;
+	bool need_ring_offsets;
+
+	need_ring_offsets = false;
+	if (ctx->stage == MESA_SHADER_GEOMETRY ||
+	    (ctx->stage == MESA_SHADER_VERTEX && ctx->options->key.vs.as_es))
+		need_ring_offsets = true;
 
 	need_push_constants = true;
 	if (!ctx->options->layout)
@@ -480,7 +488,7 @@ static void create_function(struct nir_to_llvm_context *ctx,
 			arg_types[arg_idx++] = const_array(ctx->v16i8, 8); /* address of scratch */
 	}
 
-	if (ctx->stage == MESA_SHADER_GEOMETRY) {
+	if (need_ring_offsets) {
 		/* rings */
 		array_mask |= 1 << arg_idx;
 		arg_types[arg_idx++] = const_array(ctx->v16i8, 8); /* address of rings */
@@ -515,7 +523,10 @@ static void create_function(struct nir_to_llvm_context *ctx,
 		arg_types[arg_idx++] = const_array(ctx->v16i8, 16); /* vertex buffers */
 		arg_types[arg_idx++] = ctx->i32; // base vertex
 		arg_types[arg_idx++] = ctx->i32; // start instance
-		user_sgpr_count = sgpr_count = arg_idx;
+		user_sgpr_count = arg_idx;
+		if (ctx->options->key.vs.as_es)
+			arg_types[arg_idx++] = ctx->i32; // es2gs offset
+		sgpr_count = arg_idx;
 		arg_types[arg_idx++] = ctx->i32; // vertex id
 		arg_types[arg_idx++] = ctx->i32; // rel auto id
 		arg_types[arg_idx++] = ctx->i32; // vs prim id
@@ -594,7 +605,7 @@ static void create_function(struct nir_to_llvm_context *ctx,
 	set_userdata_location_shader(ctx, AC_UD_SCRATCH, user_sgpr_idx, 2);
 	user_sgpr_idx += 2;
 
-	if (ctx->stage == MESA_SHADER_GEOMETRY) {
+	if (need_ring_offsets) {
 		set_userdata_location_shader(ctx, AC_UD_RING_OFFSETS, user_sgpr_idx, 2);
 		user_sgpr_idx += 2;
 		ctx->ring_offsets = LLVMGetParam(ctx->main_function, arg_idx++);
@@ -639,6 +650,8 @@ static void create_function(struct nir_to_llvm_context *ctx,
 		user_sgpr_idx += 2;
 		ctx->base_vertex = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->start_instance = LLVMGetParam(ctx->main_function, arg_idx++);
+		if (ctx->options->key.vs.as_es)
+			ctx->es2gs_offset = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->vertex_id = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->rel_auto_id = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->vs_prim_id = LLVMGetParam(ctx->main_function, arg_idx++);
@@ -4519,6 +4532,34 @@ handle_vs_outputs_post(struct nir_to_llvm_context *ctx)
 }
 
 static void
+handle_es_outputs_post(struct nir_to_llvm_context *ctx)
+{
+	int i, j;
+	for (unsigned i = 0; i < RADEON_LLVM_MAX_OUTPUTS; ++i) {
+		LLVMValueRef *out_ptr = &ctx->outputs[i * 4];
+		int param_index;
+		if (!(ctx->output_mask & (1ull << i)))
+			continue;
+
+		param_index = shader_io_get_unique_index(i);
+
+		for (j = 0; j < 4; j++) {
+			LLVMValueRef out_val = LLVMBuildLoad(ctx->builder, out_ptr[j], "");
+			out_val = LLVMBuildBitCast(ctx->builder, out_val, ctx->i32, "");
+
+			build_tbuffer_store(ctx,
+					    ctx->esgs_ring,
+					    out_val, 1,
+					    LLVMGetUndef(ctx->i32), ctx->es2gs_offset,
+					    (4 * param_index + j) * 4,
+					    V_008F0C_BUF_DATA_FORMAT_32,
+					    V_008F0C_BUF_NUM_FORMAT_UINT,
+					    0, 0, 1, 1, 0);
+		}
+	}
+}
+
+static void
 si_export_mrt_color(struct nir_to_llvm_context *ctx,
 		    LLVMValueRef *color, unsigned param, bool is_last)
 {
@@ -4640,7 +4681,10 @@ handle_shader_outputs_post(struct nir_to_llvm_context *ctx)
 {
 	switch (ctx->stage) {
 	case MESA_SHADER_VERTEX:
-		handle_vs_outputs_post(ctx);
+		if (ctx->options->key.vs.as_es)
+			handle_es_outputs_post(ctx);
+		else
+			handle_vs_outputs_post(ctx);
 		break;
 	case MESA_SHADER_FRAGMENT:
 		handle_fs_outputs_post(ctx);
@@ -4685,6 +4729,22 @@ static void ac_llvm_finalize_module(struct nir_to_llvm_context * ctx)
 
 	LLVMDisposeBuilder(ctx->builder);
 	LLVMDisposePassManager(passmgr);
+}
+
+static void
+ac_setup_rings(struct nir_to_llvm_context *ctx)
+{
+	int i;
+	if (ctx->stage == MESA_SHADER_GEOMETRY ||
+	    (ctx->stage == MESA_SHADER_VERTEX && ctx->options->key.vs.as_es)) {
+		ctx->esgs_ring = build_indexed_load_const(ctx, ctx->ring_offsets, ctx->i32zero);
+	}
+
+	if (ctx->stage == MESA_SHADER_GEOMETRY) {
+		for (i = 0; i < 4; i++) {
+			ctx->gsvs_ring[i] = build_indexed_load_const(ctx, ctx->ring_offsets, LLVMConstInt(ctx->i32, i + 1, false));
+		}
+	}
 }
 
 static
@@ -4748,13 +4808,10 @@ LLVMModuleRef ac_translate_nir_to_llvm(LLVMTargetMachineRef tm,
 		for (i = 0; i < 4; i++)
 			ctx.gs_next_vertex[i] = si_build_alloca_undef(&ctx, ctx.i32, "gs_next_vertex");
 
-		ctx.esgs_ring = build_indexed_load_const(&ctx, ctx.ring_offsets, ctx.i32zero);
-
-		for (i = 0; i < 4; i++) {
-			ctx.gsvs_ring[i] = build_indexed_load_const(&ctx, ctx.ring_offsets, LLVMConstInt(ctx.i32, i + 1, false));
-		}
 		ctx.gs_max_out_vertices = nir->info->gs.vertices_out;
 	}
+
+	ac_setup_rings(&ctx);
 
 	nir_foreach_variable(variable, &nir->inputs)
 		handle_shader_input_decl(&ctx, variable);
