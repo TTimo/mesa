@@ -103,6 +103,7 @@ struct ac_shader_variant_info {
 			bool writes_viewport_index;
 			uint8_t clip_dist_mask;
 			uint8_t cull_dist_mask;
+			unsigned esgs_itemsize;
 		} vs;
 		struct {
 			unsigned num_interp;
@@ -120,6 +121,14 @@ struct ac_shader_variant_info {
 		struct {
 			unsigned block_size[3];
 		} cs;
+		struct {
+			unsigned vertices_in;
+			unsigned vertices_out;
+			unsigned output_prim;
+			unsigned invocations;
+			unsigned gsvs_vertex_size;
+			unsigned max_gsvs_emit_size;
+		} gs;
 	};
 };
 

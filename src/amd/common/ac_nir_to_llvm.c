@@ -4539,6 +4539,7 @@ static void
 handle_es_outputs_post(struct nir_to_llvm_context *ctx)
 {
 	int i, j;
+	uint64_t max_output_written = 0;
 	for (unsigned i = 0; i < RADEON_LLVM_MAX_OUTPUTS; ++i) {
 		LLVMValueRef *out_ptr = &ctx->outputs[i * 4];
 		int param_index;
@@ -4546,6 +4547,9 @@ handle_es_outputs_post(struct nir_to_llvm_context *ctx)
 			continue;
 
 		param_index = shader_io_get_unique_index(i);
+
+		if (param_index > max_output_written)
+			max_output_written = param_index;
 
 		for (j = 0; j < 4; j++) {
 			LLVMValueRef out_val = LLVMBuildLoad(ctx->builder, out_ptr[j], "");
@@ -4561,6 +4565,7 @@ handle_es_outputs_post(struct nir_to_llvm_context *ctx)
 					    0, 0, 1, 1, 0);
 		}
 	}
+	ctx->shader_info->vs.esgs_itemsize = util_last_bit64(max_output_written) * 16;
 }
 
 static void
@@ -4849,6 +4854,12 @@ LLVMModuleRef ac_translate_nir_to_llvm(LLVMTargetMachineRef tm,
 	ralloc_free(ctx.defs);
 	ralloc_free(ctx.phis);
 
+	if (nir->stage == MESA_SHADER_GEOMETRY) {
+		shader_info->gs.gsvs_vertex_size = util_bitcount64(ctx.output_mask) * 16;
+		shader_info->gs.max_gsvs_emit_size = shader_info->gs.gsvs_vertex_size *
+			nir->info->gs.vertices_out;
+	}
+
 	return ctx.module;
 }
 
@@ -5024,6 +5035,7 @@ void ac_compile_nir_shader(LLVMTargetMachineRef tm,
 	                                                     options);
 
 	ac_compile_llvm_module(tm, llvm_module, binary, config, shader_info, nir->stage, dump_shader);
+
 	switch (nir->stage) {
 	case MESA_SHADER_COMPUTE:
 		for (int i = 0; i < 3; ++i)
@@ -5031,6 +5043,13 @@ void ac_compile_nir_shader(LLVMTargetMachineRef tm,
 		break;
 	case MESA_SHADER_FRAGMENT:
 		shader_info->fs.early_fragment_test = nir->info->fs.early_fragment_tests;
+		break;
+	case MESA_SHADER_GEOMETRY:
+		shader_info->gs.vertices_in = nir->info->gs.vertices_in;
+		shader_info->gs.vertices_out = nir->info->gs.vertices_out;
+		shader_info->gs.output_prim = nir->info->gs.output_primitive;
+		shader_info->gs.invocations = nir->info->gs.invocations;
+
 		break;
 	default:
 		break;
