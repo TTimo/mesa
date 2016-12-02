@@ -3042,6 +3042,7 @@ visit_emit_vertex(struct nir_to_llvm_context *ctx,
 	LLVMValueRef gs_next_vertex;
 	LLVMValueRef can_emit, kill;
 	LLVMValueRef args[2];
+	int idx;
 	/* Write vertex attribute values to GSVS ring */
 	gs_next_vertex = LLVMBuildLoad(ctx->builder,
 				       ctx->gs_next_vertex[stream],
@@ -3062,6 +3063,7 @@ visit_emit_vertex(struct nir_to_llvm_context *ctx,
 			    ctx->voidt, &kill, 1, 0);
 
 	/* loop num outputs */
+	idx = 0;
 	for (unsigned i = 0; i < RADEON_LLVM_MAX_OUTPUTS; ++i) {
 		LLVMValueRef *out_ptr = &ctx->outputs[i * 4];
 		if (!(ctx->output_mask & (1ull << i)))
@@ -3070,7 +3072,7 @@ visit_emit_vertex(struct nir_to_llvm_context *ctx,
 		for (unsigned j = 0; j < 4; j++) {
 			LLVMValueRef out_val = LLVMBuildLoad(ctx->builder,
 							     out_ptr[j], "");
-			LLVMValueRef voffset = LLVMConstInt(ctx->i32, (i * 4 + j) * ctx->gs_max_out_vertices, false);
+			LLVMValueRef voffset = LLVMConstInt(ctx->i32, (idx * 4 + j) * ctx->gs_max_out_vertices, false);
 			voffset = LLVMBuildAdd(ctx->builder, voffset, gs_next_vertex, "");
 			voffset = LLVMBuildMul(ctx->builder, voffset, LLVMConstInt(ctx->i32, 4, false), "");
 
@@ -3083,6 +3085,7 @@ visit_emit_vertex(struct nir_to_llvm_context *ctx,
 					    V_008F0C_BUF_NUM_FORMAT_UINT,
 					    1, 0, 1, 1, 0);
 		}
+		idx++;
 	}
 
 	gs_next_vertex = LLVMBuildAdd(ctx->builder, gs_next_vertex,
@@ -5034,7 +5037,46 @@ void ac_compile_nir_shader(LLVMTargetMachineRef tm,
 	}
 }
 
+static void
+ac_gs_copy_shader_emit(struct nir_to_llvm_context *ctx)
+{
+	LLVMValueRef args[9];
+	args[0] = ctx->gsvs_ring[0];
+	args[1] = LLVMBuildMul(ctx->builder, ctx->vertex_id, LLVMConstInt(ctx->i32, 4, false), "");
+	args[3] = ctx->i32zero;
+	args[4] = ctx->i32one;  /* OFFEN */
+	args[5] = ctx->i32zero; /* IDXEN */
+	args[6] = ctx->i32one;  /* GLC */
+	args[7] = ctx->i32one;  /* SLC */
+	args[8] = ctx->i32zero; /* TFE */
+
+	int idx = 0;
+	for (unsigned i = 0; i < RADEON_LLVM_MAX_OUTPUTS; ++i) {
+		if (!(ctx->output_mask & (1ull << i)))
+			continue;
+
+		for (unsigned j = 0; j < 4; j++) {
+			LLVMValueRef value;
+			args[2] = LLVMConstInt(ctx->i32,
+					       (idx * 4 + j) *
+					       ctx->gs_max_out_vertices * 16 * 4, false);
+
+			value = emit_llvm_intrinsic(ctx,
+						    "llvm.SI.buffer.load.dword.i32.i32",
+						    ctx->i32, args, 9,
+						    AC_FUNC_ATTR_READONLY);
+
+			LLVMBuildStore(ctx->builder,
+				       to_float(ctx, value), ctx->outputs[radeon_llvm_reg_index_soa(i, j)]);
+		}
+		idx++;
+	}
+	handle_vs_outputs_post(ctx);
+}
+
+
 void ac_create_gs_copy_shader(LLVMTargetMachineRef tm,
+			      struct nir_shader *geom_shader,
 			      struct ac_shader_binary *binary,
 			      struct ac_shader_config *config,
 			      struct ac_shader_variant_info *shader_info,
@@ -5055,7 +5097,13 @@ void ac_create_gs_copy_shader(LLVMTargetMachineRef tm,
 
 	create_function(&ctx, NULL);
 
+	ctx.gs_max_out_vertices = geom_shader->info->gs.vertices_out;
 	ac_setup_rings(&ctx);
+
+	nir_foreach_variable(variable, &geom_shader->outputs)
+		handle_shader_output_decl(&ctx, variable);
+
+	ac_gs_copy_shader_emit(&ctx);
 
 	LLVMBuildRetVoid(ctx.builder);
 
