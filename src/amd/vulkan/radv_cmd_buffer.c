@@ -331,16 +331,35 @@ static unsigned radv_pack_float_12p4(float x)
 }
 
 static uint32_t
-shader_stage_to_user_data_0(gl_shader_stage stage)
+shader_stage_to_user_data_0(gl_shader_stage stage, bool has_gs)
 {
 	switch (stage) {
 	case MESA_SHADER_FRAGMENT:
 		return R_00B030_SPI_SHADER_USER_DATA_PS_0;
 	case MESA_SHADER_VERTEX:
-		return R_00B130_SPI_SHADER_USER_DATA_VS_0;
+		return has_gs ? R_00B330_SPI_SHADER_USER_DATA_ES_0 : R_00B130_SPI_SHADER_USER_DATA_VS_0;
 	case MESA_SHADER_GEOMETRY:
 		return R_00B230_SPI_SHADER_USER_DATA_GS_0;
 	case MESA_SHADER_COMPUTE:
+		return R_00B900_COMPUTE_USER_DATA_0;
+	default:
+		unreachable("unknown shader");
+	}
+}
+
+static uint32_t
+hw_stage_to_user_data_0(enum radv_hw_stage stage)
+{
+	switch (stage) {
+	case RADV_HW_PS:
+		return R_00B030_SPI_SHADER_USER_DATA_PS_0;
+	case RADV_HW_VS:
+		return R_00B130_SPI_SHADER_USER_DATA_VS_0;
+	case RADV_HW_GS:
+		return R_00B230_SPI_SHADER_USER_DATA_GS_0;
+	case RADV_HW_ES:
+		return R_00B330_SPI_SHADER_USER_DATA_ES_0;
+	case RADV_HW_CS:
 		return R_00B900_COMPUTE_USER_DATA_0;
 	default:
 		unreachable("unknown shader");
@@ -362,7 +381,7 @@ radv_emit_userdata_address(struct radv_cmd_buffer *cmd_buffer,
 			   int idx, uint64_t va)
 {
 	struct ac_userdata_info *loc = radv_lookup_user_sgpr(pipeline, stage, idx);
-	uint32_t base_reg = shader_stage_to_user_data_0(stage);
+	uint32_t base_reg = shader_stage_to_user_data_0(stage, radv_pipeline_has_gs(pipeline));
 	if (loc->sgpr_idx == -1)
 		return;
 	assert(loc->num_sgprs == 2);
@@ -542,7 +561,10 @@ radv_emit_vertex_shader(struct radv_cmd_buffer *cmd_buffer,
 		uint32_t needed = vs->config.scratch_bytes_per_wave * cmd_buffer->device->scratch_waves;
 		if (needed > cmd_buffer->scratch_size_needed)
 			cmd_buffer->scratch_size_needed = needed;
-		cmd_buffer->scratch_needed_mask |= (1 << MESA_SHADER_VERTEX);
+		if (radv_pipeline_has_gs(pipeline))
+			cmd_buffer->scratch_needed_mask |= (1 << RADV_HW_ES);
+		else
+			cmd_buffer->scratch_needed_mask |= (1 << RADV_HW_VS);
 	}
 
 	if (vs->info.vs.as_es)
@@ -610,7 +632,7 @@ radv_emit_geometry_shader(struct radv_cmd_buffer *cmd_buffer,
 		uint32_t needed = gs->config.scratch_bytes_per_wave * cmd_buffer->device->scratch_waves;
 		if (needed > cmd_buffer->scratch_size_needed)
 			cmd_buffer->scratch_size_needed = needed;
-		cmd_buffer->scratch_needed_mask |= (1 << MESA_SHADER_GEOMETRY);
+		cmd_buffer->scratch_needed_mask |= (1 << RADV_HW_GS);
 	}
 
 	radeon_set_context_reg(cmd_buffer->cs, R_028A40_VGT_GS_MODE, si_vgt_gs_mode(gs));
@@ -671,7 +693,7 @@ radv_emit_fragment_shader(struct radv_cmd_buffer *cmd_buffer,
 		uint32_t needed = ps->config.scratch_bytes_per_wave * cmd_buffer->device->scratch_waves;
 		if (needed > cmd_buffer->scratch_size_needed)
 			cmd_buffer->scratch_size_needed = needed;
-		cmd_buffer->scratch_needed_mask |= (1 << MESA_SHADER_FRAGMENT);
+		cmd_buffer->scratch_needed_mask |= (1 << RADV_HW_PS);
 	}
 
 	radeon_set_sh_reg_seq(cmd_buffer->cs, R_00B020_SPI_SHADER_PGM_LO_PS, 4);
@@ -1150,7 +1172,7 @@ emit_stage_descriptor_set_userdata(struct radv_cmd_buffer *cmd_buffer,
 				   gl_shader_stage stage)
 {
 	struct ac_userdata_info *desc_set_loc = &pipeline->shaders[stage]->info.user_sgprs_locs.descriptor_sets[idx];
-	uint32_t base_reg = shader_stage_to_user_data_0(stage);
+	uint32_t base_reg = shader_stage_to_user_data_0(stage, radv_pipeline_has_gs(pipeline));
 
 	if (desc_set_loc->sgpr_idx == -1)
 		return;
@@ -1180,7 +1202,7 @@ radv_emit_descriptor_set_userdata(struct radv_cmd_buffer *cmd_buffer,
 						   idx, set->va,
 						   MESA_SHADER_VERTEX);
 	
-	if (stages & VK_SHADER_STAGE_GEOMETRY_BIT)
+	if ((stages & VK_SHADER_STAGE_GEOMETRY_BIT) && radv_pipeline_has_gs(pipeline))
 		emit_stage_descriptor_set_userdata(cmd_buffer, pipeline,
 						   idx, set->va,
 						   MESA_SHADER_GEOMETRY);
@@ -1245,7 +1267,7 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 		radv_emit_userdata_address(cmd_buffer, pipeline, MESA_SHADER_FRAGMENT,
 					   AC_UD_PUSH_CONSTANTS, va);
 
-	if (stages & VK_SHADER_STAGE_GEOMETRY_BIT)
+	if ((stages & VK_SHADER_STAGE_GEOMETRY_BIT) && radv_pipeline_has_gs(pipeline))
 		radv_emit_userdata_address(cmd_buffer, pipeline, MESA_SHADER_GEOMETRY,
 					   AC_UD_PUSH_CONSTANTS, va);
 
@@ -1324,7 +1346,7 @@ radv_cmd_buffer_flush_state(struct radv_cmd_buffer *cmd_buffer)
 	if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_PIPELINE) {
 		uint32_t stages = 0;
 
-		if (cmd_buffer->state.pipeline->shaders[MESA_SHADER_GEOMETRY])
+		if (radv_pipeline_has_gs(cmd_buffer->state.pipeline))
 			stages |= S_028B54_ES_EN(V_028B54_ES_STAGE_REAL) |
 				S_028B54_GS_EN(1) |
 				S_028B54_VS_EN(V_028B54_VS_STAGE_COPY_SHADER);
@@ -1856,10 +1878,10 @@ VkResult radv_EndCommandBuffer(
 		ring_ptr[1] = rsrc1;
 		uint64_t va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->upload.upload_bo) + ring_offset;
 
-		radv_foreach_stage(stage, cmd_buffer->scratch_needed_mask) {
+		radv_foreach_hw_stage(hw_stage, cmd_buffer->scratch_needed_mask) {
 			uint32_t reg_base;
 
-			reg_base = shader_stage_to_user_data_0(stage);
+			reg_base = hw_stage_to_user_data_0(hw_stage);
 			cmd_buffer->cs_to_patch_scratch[idx++] = PKT3(PKT3_SET_SH_REG, 2, 0);
 			cmd_buffer->cs_to_patch_scratch[idx++] = (reg_base - SI_SH_REG_OFFSET) >> 2;
 			cmd_buffer->cs_to_patch_scratch[idx++] = va;
@@ -1989,25 +2011,25 @@ VkResult radv_EndCommandBuffer(
 			cmd_buffer->cs_to_patch_ring[idx++] = cmd_buffer->gsvs_ring_size_needed >> 8;
 		}
 
-		uint64_t scratch_va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->scratch_bo) + ring_offset;
+		uint64_t va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->upload.upload_bo) + ring_offset;
 		uint32_t hack = 2;
 		uint32_t reg_base = R_00B130_SPI_SHADER_USER_DATA_VS_0 + (2 * 4);
 		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_SH_REG, 2, 0);
 		cmd_buffer->cs_to_patch_ring[idx++] = (reg_base - SI_SH_REG_OFFSET) >> 2;
-		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va;
-		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va >> 32;
+		cmd_buffer->cs_to_patch_ring[idx++] = va;
+		cmd_buffer->cs_to_patch_ring[idx++] = va >> 32;
 		
 		reg_base = R_00B230_SPI_SHADER_USER_DATA_GS_0 + (2 * 4);
 		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_SH_REG, 2, 0);
 		cmd_buffer->cs_to_patch_ring[idx++] = (reg_base - SI_SH_REG_OFFSET) >> 2;
-		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va;
-		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va >> 32;
+		cmd_buffer->cs_to_patch_ring[idx++] = va;
+		cmd_buffer->cs_to_patch_ring[idx++] = va >> 32;
 
 		reg_base = R_00B330_SPI_SHADER_USER_DATA_ES_0 + (2 * 4);
 		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_SH_REG, 2, 0);
 		cmd_buffer->cs_to_patch_ring[idx++] = (reg_base - SI_SH_REG_OFFSET) >> 2;
-		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va;
-		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va >> 32;
+		cmd_buffer->cs_to_patch_ring[idx++] = va;
+		cmd_buffer->cs_to_patch_ring[idx++] = va >> 32;
 		
 	}
 

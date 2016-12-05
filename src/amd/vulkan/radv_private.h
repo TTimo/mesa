@@ -711,6 +711,17 @@ struct radv_cmd_buffer_upload {
 	struct list_head list;
 };
 
+/* hw stages */
+enum radv_hw_stage {
+	RADV_HW_ES,
+	RADV_HW_LS,
+	RADV_HW_HS,
+	RADV_HW_GS,
+	RADV_HW_VS,
+	RADV_HW_PS,
+	RADV_HW_CS,
+};
+
 struct radv_cmd_buffer {
 	VK_LOADER_DATA                               _loader_data;
 
@@ -866,6 +877,13 @@ mesa_to_vk_shader_stage(gl_shader_stage mesa_stage)
 	     stage = __builtin_ffs(__tmp) - 1, __tmp;			\
 	     __tmp &= ~(1 << (stage)))
 
+#define RADV_HW_STAGE_MASK ((1 << RADV_HW_CS) - 1)
+#define radv_foreach_hw_stage(hw_stage, stage_bits)				\
+	for (enum radv_hw_stage hw_stage,				\
+		     __tmp = (enum radv_hw_stage)((stage_bits) & RADV_HW_STAGE_MASK);	\
+	     hw_stage = __builtin_ffs(__tmp) - 1, __tmp;			\
+	     __tmp &= ~(1 << (hw_stage)))
+
 struct radv_shader_variant {
 	uint32_t ref_count;
 
@@ -952,6 +970,11 @@ struct radv_pipeline {
 		} graphics;
 	};
 };
+
+static inline bool radv_pipeline_has_gs(struct radv_pipeline *pipeline)
+{
+	return pipeline->shaders[MESA_SHADER_GEOMETRY] ? true : false;
+}
 
 struct radv_graphics_pipeline_create_info {
 	bool use_rectlist;
