@@ -4744,15 +4744,16 @@ static void
 ac_setup_rings(struct nir_to_llvm_context *ctx)
 {
 	int i;
-	if (ctx->stage == MESA_SHADER_GEOMETRY ||
-	    (ctx->stage == MESA_SHADER_VERTEX && ctx->options->key.vs.as_es)) {
+
+	if (ctx->stage == MESA_SHADER_VERTEX && ctx->options->key.vs.as_es) {
 		ctx->esgs_ring = build_indexed_load_const(ctx, ctx->ring_offsets, ctx->i32zero);
 	}
 
 	if (ctx->is_gs_copy_shader) {
-		ctx->gsvs_ring[0] = build_indexed_load_const(ctx, ctx->ring_offsets, ctx->i32one);
+		ctx->gsvs_ring[0] = build_indexed_load_const(ctx, ctx->ring_offsets, LLVMConstInt(ctx->i32, 2, false));
 	}
 	if (ctx->stage == MESA_SHADER_GEOMETRY) {
+		ctx->esgs_ring = build_indexed_load_const(ctx, ctx->ring_offsets, ctx->i32one);
 		for (i = 0; i < 4; i++) {
 			ctx->gsvs_ring[i] = build_indexed_load_const(ctx, ctx->ring_offsets, LLVMConstInt(ctx->i32, i + 1, false));
 		}
