@@ -338,6 +338,8 @@ shader_stage_to_user_data_0(gl_shader_stage stage)
 		return R_00B030_SPI_SHADER_USER_DATA_PS_0;
 	case MESA_SHADER_VERTEX:
 		return R_00B130_SPI_SHADER_USER_DATA_VS_0;
+	case MESA_SHADER_GEOMETRY:
+		return R_00B230_SPI_SHADER_USER_DATA_GS_0;
 	case MESA_SHADER_COMPUTE:
 		return R_00B900_COMPUTE_USER_DATA_0;
 	default:
@@ -1510,6 +1512,18 @@ VkResult radv_BeginCommandBuffer(
 			radeon_emit(cmd_buffer->cs, pad_word);
 			radeon_emit(cmd_buffer->cs, pad_word);
 		}
+
+		cmd_buffer->ring_patch_idx = cmd_buffer->cs->cdw;
+		cmd_buffer->cs_to_patch_ring = cmd_buffer->cs->buf;
+		for (unsigned i = 0; i < 8; i++) {
+			radeon_emit(cmd_buffer->cs, pad_word);
+		}
+		for (unsigned i = 0; i < MESA_SHADER_STAGES; i++) {
+			radeon_emit(cmd_buffer->cs, pad_word);
+			radeon_emit(cmd_buffer->cs, pad_word);
+			radeon_emit(cmd_buffer->cs, pad_word);
+			radeon_emit(cmd_buffer->cs, pad_word);
+		}
 	}
 
 	if (pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT) {
@@ -1711,6 +1725,122 @@ VkResult radv_EndCommandBuffer(
 		}
 	}
 
+	if (cmd_buffer->level == VK_COMMAND_BUFFER_LEVEL_PRIMARY &&
+	    (cmd_buffer->esgs_ring_size_needed ||
+	     cmd_buffer->gsvs_ring_size_needed)) {
+		uint64_t esgs_va = 0, gsvs_va = 0;
+		uint32_t ring_offset;
+		void *ring_ptr;
+
+		if (cmd_buffer->esgs_ring_size_needed) {
+			cmd_buffer->esgs_ring = cmd_buffer->device->ws->buffer_create(cmd_buffer->device->ws,
+										      cmd_buffer->esgs_ring_size_needed,
+										      4096,
+										      RADEON_DOMAIN_VRAM,
+										      RADEON_FLAG_NO_CPU_ACCESS);
+			if (!cmd_buffer->esgs_ring) {
+				cmd_buffer->record_fail = true;
+				return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+			}
+			cmd_buffer->device->ws->cs_add_buffer(cmd_buffer->cs, cmd_buffer->esgs_ring, 8);
+			esgs_va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->esgs_ring);
+		}
+
+		if (cmd_buffer->gsvs_ring_size_needed) {
+			cmd_buffer->gsvs_ring = cmd_buffer->device->ws->buffer_create(cmd_buffer->device->ws,
+										      cmd_buffer->gsvs_ring_size_needed,
+										      4096,
+										      RADEON_DOMAIN_VRAM,
+										      RADEON_FLAG_NO_CPU_ACCESS);
+			if (!cmd_buffer->gsvs_ring) {
+				cmd_buffer->record_fail = true;
+				return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+			}
+			cmd_buffer->device->ws->cs_add_buffer(cmd_buffer->cs, cmd_buffer->gsvs_ring, 8);
+			gsvs_va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->gsvs_ring);
+		}
+
+		/* 2 4-dword buffer descriptors */
+		radv_cmd_buffer_upload_alloc(cmd_buffer, 2 * 4 * 4, 256, &ring_offset,
+				     &ring_ptr);
+		{
+			uint32_t *desc = (uint32_t *)ring_ptr;
+
+			/* stride 0, num records - size, add tid, swizzle, elsize4,
+			   index stride 64 */
+			desc[0] = esgs_va;
+			desc[1] = S_008F04_BASE_ADDRESS_HI(esgs_va >> 32) |
+				S_008F04_STRIDE(0) |
+				S_008F04_SWIZZLE_ENABLE(true);
+			desc[2] = cmd_buffer->esgs_ring_size_needed;
+			desc[3] = S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
+				S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
+				S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
+				S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
+				S_008F0C_NUM_FORMAT(V_008F0C_BUF_NUM_FORMAT_FLOAT) |
+				S_008F0C_DATA_FORMAT(V_008F0C_BUF_DATA_FORMAT_32) |
+				S_008F0C_ELEMENT_SIZE(1) |
+				S_008F0C_INDEX_STRIDE(3) |
+				S_008F0C_ADD_TID_ENABLE(true);
+
+			/* stride 0, num records - size, elsize0,
+			   index stride 0 */
+			desc[4] = gsvs_va;
+			desc[5] = S_008F04_BASE_ADDRESS_HI(gsvs_va >> 32)|
+				S_008F04_STRIDE(0) |
+				S_008F04_SWIZZLE_ENABLE(false);
+			desc[6] = cmd_buffer->gsvs_ring_size_needed;
+			desc[7] = S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
+				S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
+				S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
+				S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
+				S_008F0C_NUM_FORMAT(V_008F0C_BUF_NUM_FORMAT_FLOAT) |
+				S_008F0C_DATA_FORMAT(V_008F0C_BUF_DATA_FORMAT_32) |
+				S_008F0C_ELEMENT_SIZE(0) |
+				S_008F0C_INDEX_STRIDE(0) |
+				S_008F0C_ADD_TID_ENABLE(false);
+		}
+		int idx = cmd_buffer->ring_patch_idx;
+
+		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_EVENT_WRITE, 0, 0);
+		cmd_buffer->cs_to_patch_ring[idx++] = EVENT_TYPE(V_028A90_VS_PARTIAL_FLUSH) | EVENT_INDEX(4);
+		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_EVENT_WRITE, 0, 0);
+		cmd_buffer->cs_to_patch_ring[idx++] = EVENT_TYPE(V_028A90_VGT_FLUSH) | EVENT_INDEX(0);
+
+		if (cmd_buffer->device->instance->physicalDevice.rad_info.chip_class >= CIK) {
+			cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_UCONFIG_REG, 2, 0);
+			cmd_buffer->cs_to_patch_ring[idx++] = (R_030900_VGT_ESGS_RING_SIZE - CIK_UCONFIG_REG_OFFSET) >> 2;
+			cmd_buffer->cs_to_patch_ring[idx++] = cmd_buffer->esgs_ring_size_needed >> 8;
+			cmd_buffer->cs_to_patch_ring[idx++] = cmd_buffer->gsvs_ring_size_needed >> 8;
+		} else {
+			cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_CONFIG_REG, 2, 0);
+			cmd_buffer->cs_to_patch_ring[idx++] = (R_0088C8_VGT_ESGS_RING_SIZE - R600_CONFIG_REG_OFFSET) >> 2;
+			cmd_buffer->cs_to_patch_ring[idx++] = cmd_buffer->esgs_ring_size_needed >> 8;
+			cmd_buffer->cs_to_patch_ring[idx++] = cmd_buffer->gsvs_ring_size_needed >> 8;
+		}
+
+		uint64_t scratch_va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->scratch_bo) + ring_offset;
+		uint32_t hack = 2;
+		uint32_t reg_base = R_00B130_SPI_SHADER_USER_DATA_VS_0 + (2 * 4);
+		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_SH_REG, 2, 0);
+		cmd_buffer->cs_to_patch_ring[idx++] = (reg_base - SI_SH_REG_OFFSET) >> 2;
+		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va;
+		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va >> 32;
+		
+		reg_base = R_00B230_SPI_SHADER_USER_DATA_GS_0 + (2 * 4);
+		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_SH_REG, 2, 0);
+		cmd_buffer->cs_to_patch_ring[idx++] = (reg_base - SI_SH_REG_OFFSET) >> 2;
+		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va;
+		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va >> 32;
+
+		reg_base = R_00B330_SPI_SHADER_USER_DATA_ES_0 + (2 * 4);
+		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_SH_REG, 2, 0);
+		cmd_buffer->cs_to_patch_ring[idx++] = (reg_base - SI_SH_REG_OFFSET) >> 2;
+		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va;
+		cmd_buffer->cs_to_patch_ring[idx++] = scratch_va >> 32;
+		
+	}
+
 	if (!cmd_buffer->device->ws->cs_finalize(cmd_buffer->cs) ||
 	    cmd_buffer->record_fail)
 		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
@@ -1798,6 +1928,10 @@ void radv_CmdBindPipeline(
 		radv_dynamic_state_copy(&cmd_buffer->state.dynamic,
 					&pipeline->dynamic_state,
 					pipeline->dynamic_state_mask);
+		if (pipeline->graphics.esgs_ring_size > cmd_buffer->esgs_ring_size_needed)
+			cmd_buffer->esgs_ring_size_needed = pipeline->graphics.esgs_ring_size;
+		if (pipeline->graphics.gsvs_ring_size > cmd_buffer->gsvs_ring_size_needed)
+			cmd_buffer->gsvs_ring_size_needed = pipeline->graphics.gsvs_ring_size;
 		break;
 	default:
 		assert(!"invalid bind point");

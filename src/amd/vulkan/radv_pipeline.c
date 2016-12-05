@@ -1367,8 +1367,8 @@ calculate_gs_ring_sizes(struct radv_pipeline *pipeline)
 	esgs_ring_size = align(esgs_ring_size, alignment);
 	gsvs_ring_size = align(gsvs_ring_size, alignment);
 
-	esgs_ring_size = CLAMP(esgs_ring_size, min_esgs_ring_size, max_size);
-	gsvs_ring_size = MIN2(gsvs_ring_size, max_size);
+	pipeline->graphics.esgs_ring_size = CLAMP(esgs_ring_size, min_esgs_ring_size, max_size);
+	pipeline->graphics.gsvs_ring_size = MIN2(gsvs_ring_size, max_size);
 }
 
 VkResult

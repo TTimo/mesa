@@ -743,6 +743,14 @@ struct radv_cmd_buffer {
 	uint32_t scratch_needed_mask;
 	uint32_t scratch_size_needed;
 	uint32_t compute_scratch_size_needed;
+
+	/**/
+	uint32_t ring_patch_idx;
+	uint32_t *cs_to_patch_ring;
+	struct radeon_winsys_bo *esgs_ring;
+	struct radeon_winsys_bo *gsvs_ring;
+	uint32_t esgs_ring_size_needed;
+	uint32_t gsvs_ring_size_needed;
 };
 
 struct radv_image;
@@ -939,6 +947,8 @@ struct radv_pipeline {
 			unsigned prim;
 			unsigned gs_out;
 			bool prim_restart_enable;
+			unsigned esgs_ring_size;
+			unsigned gsvs_ring_size;
 		} graphics;
 	};
 };
