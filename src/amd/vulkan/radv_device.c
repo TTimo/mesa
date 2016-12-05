@@ -722,6 +722,36 @@ radv_queue_finish(struct radv_queue *queue)
 		queue->device->ws->ctx_destroy(queue->hw_ctx);
 }
 
+static void
+radv_device_init_gs_info(struct radv_device *device)
+{
+	switch (device->instance->physicalDevice.rad_info.family) {
+	case CHIP_OLAND:
+	case CHIP_HAINAN:
+	case CHIP_KAVERI:
+	case CHIP_KABINI:
+	case CHIP_MULLINS:
+	case CHIP_ICELAND:
+	case CHIP_CARRIZO:
+	case CHIP_STONEY:
+		device->gs_table_depth = 16;
+		return;
+	case CHIP_TAHITI:
+	case CHIP_PITCAIRN:
+	case CHIP_VERDE:
+	case CHIP_BONAIRE:
+	case CHIP_HAWAII:
+	case CHIP_TONGA:
+	case CHIP_FIJI:
+	case CHIP_POLARIS10:
+	case CHIP_POLARIS11:
+		device->gs_table_depth = 32;
+		return;
+	default:
+		unreachable("unknown GPU");
+	}
+}
+
 VkResult radv_CreateDevice(
 	VkPhysicalDevice                            physicalDevice,
 	const VkDeviceCreateInfo*                   pCreateInfo,
@@ -781,8 +811,11 @@ VkResult radv_CreateDevice(
 		}
 	}
 
+
 	/* TODO : predicate on LLVM version this goes into */
 	device->llvm_has_user_spill = true;
+
+	radv_device_init_gs_info(device);
 
 	result = radv_device_init_meta(device);
 	if (result != VK_SUCCESS)

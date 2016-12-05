@@ -523,7 +523,8 @@ si_get_ia_multi_vgt_param(struct radv_cmd_buffer *cmd_buffer)
 	bool partial_vs_wave = false;
 	bool partial_es_wave = false;
 
-	/* TODO GS */
+	if (radv_pipeline_has_gs(cmd_buffer->state.pipeline))
+		primgroup_size = 64;  /* recommended with a GS */
 
 	/* TODO TES */
 
@@ -571,10 +572,8 @@ si_get_ia_multi_vgt_param(struct radv_cmd_buffer *cmd_buffer)
 		partial_es_wave = true;
 
 	/* GS requirement. */
-#if 0
-	if (SI_GS_PER_ES / primgroup_size >= sctx->screen->gs_table_depth - 3)
+	if (SI_GS_PER_ES / primgroup_size >= cmd_buffer->device->gs_table_depth - 3)
 		partial_es_wave = true;
-#endif
 
 	/* Hw bug with single-primitive instances and SWITCH_ON_EOI
 	 * on multi-SE chips. */
