@@ -452,20 +452,91 @@ radv_emit_graphics_raster_state(struct radv_cmd_buffer *cmd_buffer,
 }
 
 static void
+radv_emit_hw_es(struct radv_cmd_buffer *cmd_buffer,
+		struct radv_shader_variant *shader)
+{
+	struct radeon_winsys *ws = cmd_buffer->device->ws;
+	uint64_t va = ws->buffer_get_va(shader->bo);
+	unsigned export_count;
+	
+	ws->cs_add_buffer(cmd_buffer->cs, shader->bo, 8);
+
+	export_count = MAX2(1, shader->info.vs.param_exports);
+	radeon_set_context_reg(cmd_buffer->cs, R_0286C4_SPI_VS_OUT_CONFIG,
+			       S_0286C4_VS_EXPORT_COUNT(export_count - 1));
+
+	radeon_set_context_reg(cmd_buffer->cs, R_02870C_SPI_SHADER_POS_FORMAT,
+			       S_02870C_POS0_EXPORT_FORMAT(V_02870C_SPI_SHADER_4COMP) |
+			       S_02870C_POS1_EXPORT_FORMAT(shader->info.vs.pos_exports > 1 ?
+							   V_02870C_SPI_SHADER_4COMP :
+							   V_02870C_SPI_SHADER_NONE) |
+			       S_02870C_POS2_EXPORT_FORMAT(shader->info.vs.pos_exports > 2 ?
+							   V_02870C_SPI_SHADER_4COMP :
+							   V_02870C_SPI_SHADER_NONE) |
+			       S_02870C_POS3_EXPORT_FORMAT(shader->info.vs.pos_exports > 3 ?
+							   V_02870C_SPI_SHADER_4COMP :
+							   V_02870C_SPI_SHADER_NONE));
+
+
+	radeon_set_sh_reg_seq(cmd_buffer->cs, R_00B320_SPI_SHADER_PGM_LO_ES, 4);
+	radeon_emit(cmd_buffer->cs, va >> 8);
+	radeon_emit(cmd_buffer->cs, va >> 40);
+	radeon_emit(cmd_buffer->cs, shader->rsrc1);
+	radeon_emit(cmd_buffer->cs, shader->rsrc2);
+}
+
+static void
+radv_emit_hw_vs(struct radv_cmd_buffer *cmd_buffer,
+		struct radv_shader_variant *shader)
+{
+	struct radeon_winsys *ws = cmd_buffer->device->ws;
+	uint64_t va = ws->buffer_get_va(shader->bo);
+	unsigned export_count;
+	
+	ws->cs_add_buffer(cmd_buffer->cs, shader->bo, 8);
+
+	export_count = MAX2(1, shader->info.vs.param_exports);
+	radeon_set_context_reg(cmd_buffer->cs, R_0286C4_SPI_VS_OUT_CONFIG,
+			       S_0286C4_VS_EXPORT_COUNT(export_count - 1));
+
+	radeon_set_context_reg(cmd_buffer->cs, R_02870C_SPI_SHADER_POS_FORMAT,
+			       S_02870C_POS0_EXPORT_FORMAT(V_02870C_SPI_SHADER_4COMP) |
+			       S_02870C_POS1_EXPORT_FORMAT(shader->info.vs.pos_exports > 1 ?
+							   V_02870C_SPI_SHADER_4COMP :
+							   V_02870C_SPI_SHADER_NONE) |
+			       S_02870C_POS2_EXPORT_FORMAT(shader->info.vs.pos_exports > 2 ?
+							   V_02870C_SPI_SHADER_4COMP :
+							   V_02870C_SPI_SHADER_NONE) |
+			       S_02870C_POS3_EXPORT_FORMAT(shader->info.vs.pos_exports > 3 ?
+							   V_02870C_SPI_SHADER_4COMP :
+							   V_02870C_SPI_SHADER_NONE));
+
+
+	radeon_set_sh_reg_seq(cmd_buffer->cs, R_00B120_SPI_SHADER_PGM_LO_VS, 4);
+	radeon_emit(cmd_buffer->cs, va >> 8);
+	radeon_emit(cmd_buffer->cs, va >> 40);
+	radeon_emit(cmd_buffer->cs, shader->rsrc1);
+	radeon_emit(cmd_buffer->cs, shader->rsrc2);
+
+	radeon_set_context_reg(cmd_buffer->cs, R_028818_PA_CL_VTE_CNTL,
+			       S_028818_VTX_W0_FMT(1) |
+			       S_028818_VPORT_X_SCALE_ENA(1) | S_028818_VPORT_X_OFFSET_ENA(1) |
+			       S_028818_VPORT_Y_SCALE_ENA(1) | S_028818_VPORT_Y_OFFSET_ENA(1) |
+			       S_028818_VPORT_Z_SCALE_ENA(1) | S_028818_VPORT_Z_OFFSET_ENA(1));
+
+}
+
+static void
 radv_emit_vertex_shader(struct radv_cmd_buffer *cmd_buffer,
 			struct radv_pipeline *pipeline)
 {
 	struct radeon_winsys *ws = cmd_buffer->device->ws;
 	struct radv_shader_variant *vs;
-	uint64_t va;
-	unsigned export_count;
 	unsigned clip_dist_mask, cull_dist_mask, total_mask;
 
 	assert (pipeline->shaders[MESA_SHADER_VERTEX]);
 
 	vs = pipeline->shaders[MESA_SHADER_VERTEX];
-	va = ws->buffer_get_va(vs->bo);
-	ws->cs_add_buffer(cmd_buffer->cs, vs->bo, 8);
 
 	if (vs->config.scratch_bytes_per_wave) {
 		uint32_t needed = vs->config.scratch_bytes_per_wave * cmd_buffer->device->scratch_waves;
@@ -474,38 +545,17 @@ radv_emit_vertex_shader(struct radv_cmd_buffer *cmd_buffer,
 		cmd_buffer->scratch_needed_mask |= (1 << MESA_SHADER_VERTEX);
 	}
 
+	if (vs->info.vs.as_es)
+		radv_emit_hw_es(cmd_buffer, vs);
+	else
+		radv_emit_hw_vs(cmd_buffer, vs);
+
 	clip_dist_mask = vs->info.vs.clip_dist_mask;
 	cull_dist_mask = vs->info.vs.cull_dist_mask;
 	total_mask = clip_dist_mask | cull_dist_mask;
+
 	radeon_set_context_reg(cmd_buffer->cs, R_028A40_VGT_GS_MODE, 0);
 	radeon_set_context_reg(cmd_buffer->cs, R_028A84_VGT_PRIMITIVEID_EN, 0);
-
-	export_count = MAX2(1, vs->info.vs.param_exports);
-	radeon_set_context_reg(cmd_buffer->cs, R_0286C4_SPI_VS_OUT_CONFIG,
-			       S_0286C4_VS_EXPORT_COUNT(export_count - 1));
-	radeon_set_context_reg(cmd_buffer->cs, R_02870C_SPI_SHADER_POS_FORMAT,
-			       S_02870C_POS0_EXPORT_FORMAT(V_02870C_SPI_SHADER_4COMP) |
-			       S_02870C_POS1_EXPORT_FORMAT(vs->info.vs.pos_exports > 1 ?
-							   V_02870C_SPI_SHADER_4COMP :
-							   V_02870C_SPI_SHADER_NONE) |
-			       S_02870C_POS2_EXPORT_FORMAT(vs->info.vs.pos_exports > 2 ?
-							   V_02870C_SPI_SHADER_4COMP :
-							   V_02870C_SPI_SHADER_NONE) |
-			       S_02870C_POS3_EXPORT_FORMAT(vs->info.vs.pos_exports > 3 ?
-							   V_02870C_SPI_SHADER_4COMP :
-							   V_02870C_SPI_SHADER_NONE));
-
-	radeon_set_sh_reg_seq(cmd_buffer->cs, R_00B120_SPI_SHADER_PGM_LO_VS, 4);
-	radeon_emit(cmd_buffer->cs, va >> 8);
-	radeon_emit(cmd_buffer->cs, va >> 40);
-	radeon_emit(cmd_buffer->cs, vs->rsrc1);
-	radeon_emit(cmd_buffer->cs, vs->rsrc2);
-
-	radeon_set_context_reg(cmd_buffer->cs, R_028818_PA_CL_VTE_CNTL,
-			       S_028818_VTX_W0_FMT(1) |
-			       S_028818_VPORT_X_SCALE_ENA(1) | S_028818_VPORT_X_OFFSET_ENA(1) |
-			       S_028818_VPORT_Y_SCALE_ENA(1) | S_028818_VPORT_Y_OFFSET_ENA(1) |
-			       S_028818_VPORT_Z_SCALE_ENA(1) | S_028818_VPORT_Z_OFFSET_ENA(1));
 
 	radeon_set_context_reg(cmd_buffer->cs, R_02881C_PA_CL_VS_OUT_CNTL,
 			       S_02881C_USE_VTX_POINT_SIZE(vs->info.vs.writes_pointsize) |
@@ -519,10 +569,28 @@ radv_emit_vertex_shader(struct radv_cmd_buffer *cmd_buffer,
 			       pipeline->graphics.raster.pa_cl_vs_out_cntl |
 			       cull_dist_mask << 8 |
 			       clip_dist_mask);
-
 }
 
+static void
+radv_emit_geometry_shader(struct radv_cmd_buffer *cmd_buffer,
+			  struct radv_pipeline *pipeline)
+{
+	struct radeon_winsys *ws = cmd_buffer->device->ws;
+	struct radv_shader_variant *gs;
+	uint64_t va;
+	
+	gs = pipeline->shaders[MESA_SHADER_GEOMETRY];
+	if (!gs)
+		return;
 
+	va = ws->buffer_get_va(gs->bo);
+	ws->cs_add_buffer(cmd_buffer->cs, gs->bo, 8);
+	radeon_set_sh_reg_seq(cmd_buffer->cs, R_00B220_SPI_SHADER_PGM_LO_GS, 4);
+	radeon_emit(cmd_buffer->cs, va >> 8);
+	radeon_emit(cmd_buffer->cs, va >> 40);
+	radeon_emit(cmd_buffer->cs, gs->rsrc1);
+	radeon_emit(cmd_buffer->cs, gs->rsrc2);
+}
 
 static void
 radv_emit_fragment_shader(struct radv_cmd_buffer *cmd_buffer,
@@ -635,6 +703,7 @@ radv_emit_graphics_pipeline(struct radv_cmd_buffer *cmd_buffer,
 	radv_emit_graphics_raster_state(cmd_buffer, pipeline);
 	radv_update_multisample_state(cmd_buffer, pipeline);
 	radv_emit_vertex_shader(cmd_buffer, pipeline);
+	radv_emit_geometry_shader(cmd_buffer, pipeline);
 	radv_emit_fragment_shader(cmd_buffer, pipeline);
 
 	radeon_set_context_reg(cmd_buffer->cs, R_028A94_VGT_MULTI_PRIM_IB_RESET_EN,
@@ -1760,12 +1829,19 @@ VkResult radv_EndCommandBuffer(
 			gsvs_va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->gsvs_ring);
 		}
 
-		/* 2 4-dword buffer descriptors */
-		radv_cmd_buffer_upload_alloc(cmd_buffer, 2 * 4 * 4, 256, &ring_offset,
+		/* 3 4-dword buffer descriptors 
+		 * ES entry for ES->GS ring
+		 * GS entry for ES->GS ring
+		 * VS entry for GS->VS ring
+		 * This doesn't contain the 
+		 * GS entry for GS->VS ring as that is per shader dependant.
+		*/
+		radv_cmd_buffer_upload_alloc(cmd_buffer, 3 * 4 * 4, 256, &ring_offset,
 				     &ring_ptr);
 		{
 			uint32_t *desc = (uint32_t *)ring_ptr;
 
+			/* ES entry for ES->GS ring */
 			/* stride 0, num records - size, add tid, swizzle, elsize4,
 			   index stride 64 */
 			desc[0] = esgs_va;
@@ -1783,14 +1859,35 @@ VkResult radv_EndCommandBuffer(
 				S_008F0C_INDEX_STRIDE(3) |
 				S_008F0C_ADD_TID_ENABLE(true);
 
+			desc += 4;
+			/* GS entry for ES->GS ring */
 			/* stride 0, num records - size, elsize0,
 			   index stride 0 */
-			desc[4] = gsvs_va;
-			desc[5] = S_008F04_BASE_ADDRESS_HI(gsvs_va >> 32)|
+			desc[0] = esgs_va;
+			desc[1] = S_008F04_BASE_ADDRESS_HI(esgs_va >> 32)|
 				S_008F04_STRIDE(0) |
 				S_008F04_SWIZZLE_ENABLE(false);
-			desc[6] = cmd_buffer->gsvs_ring_size_needed;
-			desc[7] = S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
+			desc[2] = cmd_buffer->esgs_ring_size_needed;
+			desc[3] = S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
+				S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
+				S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
+				S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
+				S_008F0C_NUM_FORMAT(V_008F0C_BUF_NUM_FORMAT_FLOAT) |
+				S_008F0C_DATA_FORMAT(V_008F0C_BUF_DATA_FORMAT_32) |
+				S_008F0C_ELEMENT_SIZE(0) |
+				S_008F0C_INDEX_STRIDE(0) |
+				S_008F0C_ADD_TID_ENABLE(false);
+
+			desc += 4;
+			/* VS entry for GS->VS ring */
+			/* stride 0, num records - size, elsize0,
+			   index stride 0 */
+			desc[0] = gsvs_va;
+			desc[1] = S_008F04_BASE_ADDRESS_HI(gsvs_va >> 32)|
+				S_008F04_STRIDE(0) |
+				S_008F04_SWIZZLE_ENABLE(false);
+			desc[2] = cmd_buffer->gsvs_ring_size_needed;
+			desc[3] = S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
 				S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
 				S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
 				S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
