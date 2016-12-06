@@ -476,27 +476,11 @@ radv_emit_hw_es(struct radv_cmd_buffer *cmd_buffer,
 {
 	struct radeon_winsys *ws = cmd_buffer->device->ws;
 	uint64_t va = ws->buffer_get_va(shader->bo);
-	unsigned export_count;
 	
 	ws->cs_add_buffer(cmd_buffer->cs, shader->bo, 8);
 
-	export_count = MAX2(1, shader->info.vs.param_exports);
-	radeon_set_context_reg(cmd_buffer->cs, R_0286C4_SPI_VS_OUT_CONFIG,
-			       S_0286C4_VS_EXPORT_COUNT(export_count - 1));
-
-	radeon_set_context_reg(cmd_buffer->cs, R_02870C_SPI_SHADER_POS_FORMAT,
-			       S_02870C_POS0_EXPORT_FORMAT(V_02870C_SPI_SHADER_4COMP) |
-			       S_02870C_POS1_EXPORT_FORMAT(shader->info.vs.pos_exports > 1 ?
-							   V_02870C_SPI_SHADER_4COMP :
-							   V_02870C_SPI_SHADER_NONE) |
-			       S_02870C_POS2_EXPORT_FORMAT(shader->info.vs.pos_exports > 2 ?
-							   V_02870C_SPI_SHADER_4COMP :
-							   V_02870C_SPI_SHADER_NONE) |
-			       S_02870C_POS3_EXPORT_FORMAT(shader->info.vs.pos_exports > 3 ?
-							   V_02870C_SPI_SHADER_4COMP :
-							   V_02870C_SPI_SHADER_NONE));
-
-
+	radeon_set_context_reg(cmd_buffer->cs, R_028AAC_VGT_ESGS_RING_ITEMSIZE,
+			       shader->info.vs.esgs_itemsize / 4);
 	radeon_set_sh_reg_seq(cmd_buffer->cs, R_00B320_SPI_SHADER_PGM_LO_ES, 4);
 	radeon_emit(cmd_buffer->cs, va >> 8);
 	radeon_emit(cmd_buffer->cs, va >> 40);
