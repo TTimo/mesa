@@ -268,7 +268,7 @@ static const char *radv_get_shader_name(struct radv_shader_variant *var,
 					gl_shader_stage stage)
 {
 	switch (stage) {
-	case MESA_SHADER_VERTEX: return "Vertex Shader as VS";
+	case MESA_SHADER_VERTEX: return var->info.vs.as_es ? "Vertex Shader as ES" : "Vertex Shader as VS";
 	case MESA_SHADER_GEOMETRY: return "Geometry Shader";
 	case MESA_SHADER_FRAGMENT: return "Pixel Shader";
 	case MESA_SHADER_COMPUTE: return "Compute Shader";
