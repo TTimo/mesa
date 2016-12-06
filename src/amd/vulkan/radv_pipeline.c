@@ -1154,6 +1154,29 @@ si_translate_prim(enum VkPrimitiveTopology topology)
 }
 
 static uint32_t
+si_conv_gl_prim_to_gs_out(unsigned gl_prim)
+{
+	switch (gl_prim) {
+	case 0: /* GL_POINTS */
+		return V_028A6C_OUTPRIM_TYPE_POINTLIST;
+	case 1: /* GL_LINES */
+	case 3: /* GL_LINE_STRIP */
+	case 0xA: /* GL_LINE_STRIP_ADJACENCY_ARB */
+	case 0x8E7A: /* GL_ISOLINES */
+		return V_028A6C_OUTPRIM_TYPE_LINESTRIP;
+
+	case 4: /* GL_TRIANGLES */
+	case 0xc: /* GL_TRIANGLES_ADJACENCY_ARB */
+	case 5: /* GL_TRIANGLE_STRIP */
+	case 7: /* GL_QUADS */
+		return V_028A6C_OUTPRIM_TYPE_TRISTRIP;
+	default:
+		assert(0);
+		return 0;
+	}
+}
+
+static uint32_t
 si_conv_prim_to_gs_out(enum VkPrimitiveTopology topology)
 {
 	switch (topology) {
@@ -1462,7 +1485,7 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 	pipeline->graphics.prim = si_translate_prim(pCreateInfo->pInputAssemblyState->topology);
 
 	if (radv_pipeline_has_gs(pipeline)) {
-		pipeline->graphics.gs_out = si_conv_prim_to_gs_out(pipeline->shaders[MESA_SHADER_GEOMETRY]->info.gs.output_prim);
+		pipeline->graphics.gs_out = si_conv_gl_prim_to_gs_out(pipeline->shaders[MESA_SHADER_GEOMETRY]->info.gs.output_prim);
 	} else {
 		pipeline->graphics.gs_out = si_conv_prim_to_gs_out(pCreateInfo->pInputAssemblyState->topology);
 	}
