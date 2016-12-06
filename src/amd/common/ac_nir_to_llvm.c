@@ -471,8 +471,9 @@ static void create_function(struct nir_to_llvm_context *ctx,
 	bool need_ring_offsets;
 
 	need_ring_offsets = false;
+	/* until we sort out scratch/global buffers always assign ring offsets for gs/vs/es */
 	if (ctx->stage == MESA_SHADER_GEOMETRY ||
-	    (ctx->stage == MESA_SHADER_VERTEX && ctx->options->key.vs.as_es) ||
+	    (ctx->stage == MESA_SHADER_VERTEX/* && ctx->options->key.vs.as_es*/) ||
 	    ctx->is_gs_copy_shader)
 		need_ring_offsets = true;
 
