@@ -669,6 +669,23 @@ radv_emit_geometry_shader(struct radv_cmd_buffer *cmd_buffer,
 	radeon_emit(cmd_buffer->cs, gs->rsrc2);
 
 	radv_emit_hw_vs(cmd_buffer, pipeline->gs_copy_shader);
+
+	struct ac_userdata_info *loc = radv_lookup_user_sgpr(cmd_buffer->state.pipeline, MESA_SHADER_GEOMETRY,
+							     AC_UD_GS_VS_RING_STRIDE_ENTRIES);
+	if (loc->sgpr_idx != -1) {
+		uint32_t stride = gs->info.gs.max_gsvs_emit_size;
+		uint32_t num_entries = 64;
+		bool is_vi = cmd_buffer->device->instance->physicalDevice.rad_info.chip_class >= VI;
+
+		if (is_vi)
+			num_entries *= stride;
+
+		stride = S_008F04_STRIDE(stride);
+		radeon_set_sh_reg_seq(cmd_buffer->cs, R_00B230_SPI_SHADER_USER_DATA_GS_0 + loc->sgpr_idx * 4, 2);
+		radeon_emit(cmd_buffer->cs, stride);
+		radeon_emit(cmd_buffer->cs, num_entries);
+	}
+		
 }
 
 static void
@@ -1924,14 +1941,13 @@ VkResult radv_EndCommandBuffer(
 			gsvs_va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->gsvs_ring);
 		}
 
-		/* 3 4-dword buffer descriptors 
+		/* 4 4-dword buffer descriptors
 		 * ES entry for ES->GS ring
 		 * GS entry for ES->GS ring
 		 * VS entry for GS->VS ring
-		 * This doesn't contain the 
-		 * GS entry for GS->VS ring as that is per shader dependant.
+		 * GS entry for GS->VS ring that gets patched by shader.
 		*/
-		radv_cmd_buffer_upload_alloc(cmd_buffer, 3 * 4 * 4, 256, &ring_offset,
+		radv_cmd_buffer_upload_alloc(cmd_buffer, 4 * 4 * 4, 256, &ring_offset,
 				     &ring_ptr);
 		{
 			uint32_t *desc = (uint32_t *)ring_ptr;
@@ -1991,6 +2007,25 @@ VkResult radv_EndCommandBuffer(
 				S_008F0C_ELEMENT_SIZE(0) |
 				S_008F0C_INDEX_STRIDE(0) |
 				S_008F0C_ADD_TID_ENABLE(false);
+			desc += 4;
+			
+			/* stride gsvs_itemsize, num records 64
+			   elsize 4, index stride 16 */
+			/* shader will patch stride and desc[2] */
+			desc[0] = gsvs_va;
+			desc[1] = S_008F04_BASE_ADDRESS_HI(gsvs_va >> 32)|
+				S_008F04_STRIDE(0) |
+				S_008F04_SWIZZLE_ENABLE(true);
+			desc[2] = 0;
+			desc[3] = S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
+				S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
+				S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
+				S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
+				S_008F0C_NUM_FORMAT(V_008F0C_BUF_NUM_FORMAT_FLOAT) |
+				S_008F0C_DATA_FORMAT(V_008F0C_BUF_DATA_FORMAT_32) |
+				S_008F0C_ELEMENT_SIZE(1) |
+				S_008F0C_INDEX_STRIDE(1) |
+				S_008F0C_ADD_TID_ENABLE(true);
 		}
 		int idx = cmd_buffer->ring_patch_idx;
 

@@ -89,6 +89,8 @@ struct nir_to_llvm_context {
 
 	LLVMValueRef es2gs_offset;
 
+	LLVMValueRef gsvs_ring_stride;
+	LLVMValueRef gsvs_num_entries;
 	LLVMValueRef gs_next_vertex[4];
 	LLVMValueRef gs2vs_offset;
 	LLVMValueRef gs_wave_id;
@@ -534,6 +536,8 @@ static void create_function(struct nir_to_llvm_context *ctx,
 		arg_types[arg_idx++] = ctx->i32; // instance id
 		break;
 	case MESA_SHADER_GEOMETRY:
+		arg_types[arg_idx++] = ctx->i32; // gsvs stride
+		arg_types[arg_idx++] = ctx->i32; // gsvs num entires
 		user_sgpr_count = arg_idx;
 		arg_types[arg_idx++] = ctx->i32; // gs2vs offset
 	        arg_types[arg_idx++] = ctx->i32; // wave id
@@ -659,6 +663,10 @@ static void create_function(struct nir_to_llvm_context *ctx,
 		ctx->instance_id = LLVMGetParam(ctx->main_function, arg_idx++);
 		break;
 	case MESA_SHADER_GEOMETRY:
+		set_userdata_location_shader(ctx, AC_UD_GS_VS_RING_STRIDE_ENTRIES, user_sgpr_idx, 2);
+		user_sgpr_idx += 2;
+		ctx->gsvs_ring_stride = LLVMGetParam(ctx->main_function, arg_idx++);
+		ctx->gsvs_num_entries = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->gs2vs_offset = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->gs_wave_id = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->gs_vtx_offset[0] = LLVMGetParam(ctx->main_function, arg_idx++);
@@ -4753,10 +4761,18 @@ ac_setup_rings(struct nir_to_llvm_context *ctx)
 		ctx->gsvs_ring[0] = build_indexed_load_const(ctx, ctx->ring_offsets, LLVMConstInt(ctx->i32, 2, false));
 	}
 	if (ctx->stage == MESA_SHADER_GEOMETRY) {
+		LLVMValueRef tmp;
 		ctx->esgs_ring = build_indexed_load_const(ctx, ctx->ring_offsets, ctx->i32one);
-		for (i = 0; i < 4; i++) {
-			ctx->gsvs_ring[i] = build_indexed_load_const(ctx, ctx->ring_offsets, LLVMConstInt(ctx->i32, i + 1, false));
-		}
+		ctx->gsvs_ring[0] = build_indexed_load_const(ctx, ctx->ring_offsets, LLVMConstInt(ctx->i32, 3, false));
+
+		ctx->gsvs_ring[0] = LLVMBuildBitCast(ctx->builder, ctx->gsvs_ring[0], ctx->v4i32, "");
+
+		ctx->gsvs_ring[0] = LLVMBuildInsertElement(ctx->builder, ctx->gsvs_ring[0], ctx->gsvs_num_entries, LLVMConstInt(ctx->i32, 2, false), "");
+		tmp = LLVMBuildExtractElement(ctx->builder, ctx->gsvs_ring[0], ctx->i32one, "");
+		tmp = LLVMBuildOr(ctx->builder, tmp, ctx->gsvs_ring_stride, "");
+		ctx->gsvs_ring[0] = LLVMBuildInsertElement(ctx->builder, ctx->gsvs_ring[0], tmp, ctx->i32one, "");
+
+		ctx->gsvs_ring[0] = LLVMBuildBitCast(ctx->builder, ctx->gsvs_ring[0], ctx->v16i8, "");
 	}
 }
 
