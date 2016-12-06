@@ -119,6 +119,9 @@ void radv_DestroyPipeline(
 		if (pipeline->shaders[i])
 			radv_shader_variant_destroy(device, pipeline->shaders[i]);
 
+	if (pipeline->gs_copy_shader)
+		radv_shader_variant_destroy(device, pipeline->gs_copy_shader);
+
 	vk_free2(&device->alloc, pAllocator, pipeline);
 }
 
