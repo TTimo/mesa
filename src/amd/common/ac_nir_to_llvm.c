@@ -95,7 +95,7 @@ struct nir_to_llvm_context {
 	LLVMValueRef gs2vs_offset;
 	LLVMValueRef gs_wave_id;
 	LLVMValueRef gs_vtx_offset[6];
-	LLVMValueRef gs_prim_id;
+	LLVMValueRef gs_prim_id, gs_invocation_id;
 
 	LLVMValueRef esgs_ring;
 	LLVMValueRef gsvs_ring[4];
@@ -685,6 +685,7 @@ static void create_function(struct nir_to_llvm_context *ctx,
 		ctx->gs_vtx_offset[3] = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->gs_vtx_offset[4] = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->gs_vtx_offset[5] = LLVMGetParam(ctx->main_function, arg_idx++);
+		ctx->gs_invocation_id = LLVMGetParam(ctx->main_function, arg_idx++);
 		break;
 	case MESA_SHADER_FRAGMENT:
 		if (info->fs.has_interp_var_at_sample) {
@@ -3153,6 +3154,9 @@ static void visit_intrinsic(struct nir_to_llvm_context *ctx,
 	}
 	case nir_intrinsic_load_base_instance:
 		result = ctx->start_instance;
+		break;
+	case nir_intrinsic_load_invocation_id:
+		result = ctx->gs_invocation_id;
 		break;
 	case nir_intrinsic_load_sample_id:
 		ctx->shader_info->fs.force_persample = true;
