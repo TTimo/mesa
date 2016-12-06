@@ -3158,6 +3158,12 @@ static void visit_intrinsic(struct nir_to_llvm_context *ctx,
 	case nir_intrinsic_load_invocation_id:
 		result = ctx->gs_invocation_id;
 		break;
+	case nir_intrinsic_load_primitive_id:
+		if (ctx->stage == MESA_SHADER_GEOMETRY)
+			result = ctx->gs_prim_id;
+		else
+			fprintf(stderr, "Unknown primitive id intrinsic: %d", ctx->stage);
+		break;
 	case nir_intrinsic_load_sample_id:
 		ctx->shader_info->fs.force_persample = true;
 		result = unpack_param(ctx, ctx->ancillary, 8, 4);
