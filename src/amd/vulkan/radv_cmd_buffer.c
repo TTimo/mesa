@@ -686,7 +686,7 @@ radv_emit_fragment_shader(struct radv_cmd_buffer *cmd_buffer,
 	assert (pipeline->shaders[MESA_SHADER_FRAGMENT]);
 
 	ps = pipeline->shaders[MESA_SHADER_FRAGMENT];
-	vs = pipeline->shaders[MESA_SHADER_VERTEX];
+	vs = radv_pipeline_has_gs(pipeline) ? pipeline->gs_copy_shader : pipeline->shaders[MESA_SHADER_VERTEX];
 	va = ws->buffer_get_va(ps->bo);
 	ws->cs_add_buffer(cmd_buffer->cs, ps->bo, 8);
 
@@ -794,7 +794,10 @@ radv_emit_graphics_pipeline(struct radv_cmd_buffer *cmd_buffer,
 					  pipeline->shaders[MESA_SHADER_VERTEX]->config.scratch_bytes_per_wave);
 	max_scratch_bytes_per_wave = MAX2(max_scratch_bytes_per_wave,
 					  pipeline->shaders[MESA_SHADER_FRAGMENT]->config.scratch_bytes_per_wave);
-
+	if (radv_pipeline_has_gs(pipeline))
+		max_scratch_bytes_per_wave = MAX2(max_scratch_bytes_per_wave,
+						  pipeline->shaders[MESA_SHADER_GEOMETRY]->config.scratch_bytes_per_wave);
+	
 	radeon_set_context_reg(cmd_buffer->cs, R_0286E8_SPI_TMPRING_SIZE,
 			       S_0286E8_WAVES(cmd_buffer->device->scratch_waves) |
 			       S_0286E8_WAVESIZE(max_scratch_bytes_per_wave >> 10));
