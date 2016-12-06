@@ -3074,8 +3074,8 @@ visit_emit_vertex(struct nir_to_llvm_context *ctx,
 				 LLVMConstInt(ctx->i32, ctx->gs_max_out_vertices, false), "");
 
 	kill = LLVMBuildSelect(ctx->builder, can_emit,
-			       LLVMConstReal(ctx->f32, -1.0f),
-			       ctx->f32zero, "");
+			       LLVMConstReal(ctx->f32, 1.0f),
+			       LLVMConstReal(ctx->f32, -1.0f), "");
 	emit_llvm_intrinsic(ctx, "llvm.AMDGPU.kill",
 			    ctx->voidt, &kill, 1, 0);
 
