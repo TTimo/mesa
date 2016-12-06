@@ -494,7 +494,7 @@ static void create_function(struct nir_to_llvm_context *ctx,
 
 	if (need_ring_offsets) {
 		/* rings */
-		array_mask |= 1 << arg_idx;
+//		array_mask |= 1 << arg_idx;
 		arg_types[arg_idx++] = const_array(ctx->v16i8, 8); /* address of rings */
 	}
 
