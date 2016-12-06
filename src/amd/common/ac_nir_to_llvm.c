@@ -4581,7 +4581,7 @@ handle_es_outputs_post(struct nir_to_llvm_context *ctx)
 					    0, 0, 1, 1, 0);
 		}
 	}
-	ctx->shader_info->vs.esgs_itemsize = max_output_written * 16;
+	ctx->shader_info->vs.esgs_itemsize = (max_output_written + 1) * 16;
 }
 
 static void
