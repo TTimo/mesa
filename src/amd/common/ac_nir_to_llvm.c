@@ -3071,7 +3071,7 @@ visit_emit_vertex(struct nir_to_llvm_context *ctx,
 	 * have any effect, and GS threads have no externally observable
 	 * effects other than emitting vertices.
 	 */
-	can_emit = LLVMBuildICmp(ctx->builder, LLVMIntULE, gs_next_vertex,
+	can_emit = LLVMBuildICmp(ctx->builder, LLVMIntULT, gs_next_vertex,
 				 LLVMConstInt(ctx->i32, ctx->gs_max_out_vertices, false), "");
 
 	kill = LLVMBuildSelect(ctx->builder, can_emit,
