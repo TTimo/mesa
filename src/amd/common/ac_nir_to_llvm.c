@@ -4854,7 +4854,7 @@ LLVMModuleRef ac_translate_nir_to_llvm(LLVMTargetMachineRef tm,
 		}
 	} else if (nir->stage == MESA_SHADER_GEOMETRY) {
 		for (i = 0; i < 4; i++)
-			ctx.gs_next_vertex[i] = si_build_alloca_undef(&ctx, ctx.i32, "gs_next_vertex");
+			ctx.gs_next_vertex[i] = ac_build_alloca(&ctx, ctx.i32, "gs_next_vertex");
 
 		ctx.gs_max_out_vertices = nir->info->gs.vertices_out;
 	}
