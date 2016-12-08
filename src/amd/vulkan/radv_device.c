@@ -781,6 +781,9 @@ VkResult radv_CreateDevice(
 		}
 	}
 
+	/* TODO : predicate on LLVM version this goes into */
+	device->llvm_has_user_spill = true;
+
 	result = radv_device_init_meta(device);
 	if (result != VK_SUCCESS)
 		goto fail;

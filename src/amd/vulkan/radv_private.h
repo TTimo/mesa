@@ -489,6 +489,7 @@ struct radv_device {
 
 	uint64_t debug_flags;
 
+	bool llvm_has_user_spill;
 	uint32_t scratch_waves;
 	/* MSAA sample locations.
 	 * The first index is the sample index.
