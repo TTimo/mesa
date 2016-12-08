@@ -107,6 +107,7 @@ struct ac_shader_variant_info {
 			uint8_t clip_dist_mask;
 			uint8_t cull_dist_mask;
 			unsigned esgs_itemsize;
+			uint32_t prim_id_output;
 		} vs;
 		struct {
 			unsigned num_interp;
@@ -120,6 +121,7 @@ struct ac_shader_variant_info {
 			bool early_fragment_test;
 			bool writes_memory;
 			bool force_persample;
+			bool prim_id_input;
 		} fs;
 		struct {
 			unsigned block_size[3];

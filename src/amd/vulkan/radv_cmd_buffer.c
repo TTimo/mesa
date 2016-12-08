@@ -742,13 +742,24 @@ radv_emit_fragment_shader(struct radv_cmd_buffer *cmd_buffer,
 	radeon_set_context_reg(cmd_buffer->cs, R_028238_CB_TARGET_MASK, blend->cb_target_mask);
 	radeon_set_context_reg(cmd_buffer->cs, R_02823C_CB_SHADER_MASK, blend->cb_shader_mask);
 
+	ps_offset = 0;
 	if (ps->info.fs.has_pcoord) {
 		unsigned val;
 		val = S_028644_PT_SPRITE_TEX(1) | S_028644_OFFSET(0x20);
 		radeon_set_context_reg(cmd_buffer->cs, R_028644_SPI_PS_INPUT_CNTL_0 + 4 * ps_offset, val);
-		ps_offset = 1;
+		ps_offset++;
 	}
 
+	if (ps->info.fs.prim_id_input && (vs->info.vs.prim_id_output != 0xffffffff)) {
+		unsigned vs_offset, flat_shade;
+		unsigned val;
+		vs_offset = vs->info.vs.prim_id_output;
+		flat_shade = true;
+		val = S_028644_OFFSET(vs_offset) | S_028644_FLAT_SHADE(flat_shade);
+		radeon_set_context_reg(cmd_buffer->cs, R_028644_SPI_PS_INPUT_CNTL_0 + 4 * ps_offset, val);
+		++ps_offset;
+	}
+	
 	for (unsigned i = 0; i < 32 && (1u << i) <= ps->info.fs.input_mask; ++i) {
 		unsigned vs_offset, flat_shade;
 		unsigned val;
@@ -765,6 +776,11 @@ radv_emit_fragment_shader(struct radv_cmd_buffer *cmd_buffer,
 		}
 
 		vs_offset = util_bitcount(vs->info.vs.export_mask & ((1u << i) - 1));
+
+		if (vs->info.vs.prim_id_output != 0xffffffff) {
+			if (vs_offset >= vs->info.vs.prim_id_output)
+				vs_offset++;
+		}
 		flat_shade = !!(ps->info.fs.flat_shaded_mask & (1u << ps_offset));
 
 		val = S_028644_OFFSET(vs_offset) | S_028644_FLAT_SHADE(flat_shade);
