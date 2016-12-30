@@ -1867,7 +1867,7 @@ VkResult radv_EndCommandBuffer(
 			S_008F04_SWIZZLE_ENABLE(1);
 		uint32_t reg_base;
 
-		reg_base = shader_stage_to_user_data_0(MESA_SHADER_COMPUTE);
+		reg_base = shader_stage_to_user_data_0(MESA_SHADER_COMPUTE, false);
 		cmd_buffer->cs_to_patch_scratch[idx++] = PKT3(PKT3_SET_SH_REG, 2, 0);
 		cmd_buffer->cs_to_patch_scratch[idx++] = (reg_base - SI_SH_REG_OFFSET) >> 2;
 		cmd_buffer->cs_to_patch_scratch[idx++] = scratch_va;

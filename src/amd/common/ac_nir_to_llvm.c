@@ -5003,6 +5003,7 @@ static void ac_compile_llvm_module(LLVMTargetMachineRef tm,
 				   struct ac_shader_config *config,
 				   struct ac_shader_variant_info *shader_info,
 				   gl_shader_stage stage,
+				   bool spill_user_ptr,
 				   bool dump_shader)
 {
 	if (dump_shader)
@@ -5017,7 +5018,7 @@ static void ac_compile_llvm_module(LLVMTargetMachineRef tm,
 	if (dump_shader)
 		fprintf(stderr, "disasm:\n%s\n", binary->disasm_string);
 
-	ac_shader_binary_read_config(binary, config, 0, options->spill_user_ptr);
+	ac_shader_binary_read_config(binary, config, 0, spill_user_ptr);
 
 	LLVMContextRef ctx = LLVMGetModuleContext(llvm_module);
 	LLVMDisposeModule(llvm_module);
@@ -5077,7 +5078,7 @@ void ac_compile_nir_shader(LLVMTargetMachineRef tm,
 	LLVMModuleRef llvm_module = ac_translate_nir_to_llvm(tm, nir, shader_info,
 	                                                     options);
 
-	ac_compile_llvm_module(tm, llvm_module, binary, config, shader_info, nir->stage, dump_shader);
+	ac_compile_llvm_module(tm, llvm_module, binary, config, shader_info, nir->stage, options->spill_user_ptr, dump_shader);
 
 	switch (nir->stage) {
 	case MESA_SHADER_COMPUTE:
@@ -5173,5 +5174,5 @@ void ac_create_gs_copy_shader(LLVMTargetMachineRef tm,
 	ac_llvm_finalize_module(&ctx);
 
 	ac_compile_llvm_module(tm, ctx.module, binary, config, shader_info, MESA_SHADER_VERTEX,
-			       dump_shader);
+			       false, dump_shader);
 }

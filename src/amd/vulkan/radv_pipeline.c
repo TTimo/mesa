@@ -465,7 +465,7 @@ radv_pipeline_create_gs_copy_shader(struct radv_pipeline *pipeline,
 	options.family = chip_family;
 	options.chip_class = pipeline->device->instance->physicalDevice.rad_info.chip_class;
 
-	tm = ac_create_target_machine(chip_family);
+	tm = ac_create_target_machine(chip_family, false);
 	ac_create_gs_copy_shader(tm, nir, &binary, &variant->config, &variant->info, &options, dump_shader);
 	LLVMDisposeTargetMachine(tm);
 
