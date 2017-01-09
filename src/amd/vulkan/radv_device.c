@@ -813,7 +813,7 @@ VkResult radv_CreateDevice(
 
 
 	/* TODO : predicate on LLVM version this goes into */
-	device->llvm_has_user_spill = true;
+	device->llvm_has_user_spill = false;
 
 	radv_device_init_gs_info(device);
 
