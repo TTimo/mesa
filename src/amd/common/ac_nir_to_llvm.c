@@ -427,7 +427,7 @@ static void build_tbuffer_store(struct nir_to_llvm_context *ctx,
 	char name[256];
 	snprintf(name, sizeof(name), "llvm.SI.tbuffer.store.%s", types[func]);
 
-	emit_llvm_intrinsic(ctx, name, ctx->voidt,
+	ac_emit_llvm_intrinsic(&ctx->ac, name, ctx->voidt,
 			    args, ARRAY_SIZE(args), 0);
 
 }
@@ -2208,10 +2208,10 @@ load_gs_input(struct nir_to_llvm_context *ctx,
 		args[7] = ctx->i32zero; /* SLC */
 		args[8] = ctx->i32zero; /* TFE */
 
-		value[i] = emit_llvm_intrinsic(ctx, "llvm.SI.buffer.load.dword.i32.i32",
+		value[i] = ac_emit_llvm_intrinsic(&ctx->ac, "llvm.SI.buffer.load.dword.i32.i32",
 					    ctx->i32, args, 9, AC_FUNC_ATTR_READONLY);
 	}
-	result = build_gather_values(ctx, value, instr->num_components);
+	result = ac_build_gather_values(&ctx->ac, value, instr->num_components);
 
 	return result;
 }
@@ -3077,7 +3077,7 @@ visit_emit_vertex(struct nir_to_llvm_context *ctx,
 	kill = LLVMBuildSelect(ctx->builder, can_emit,
 			       LLVMConstReal(ctx->f32, 1.0f),
 			       LLVMConstReal(ctx->f32, -1.0f), "");
-	emit_llvm_intrinsic(ctx, "llvm.AMDGPU.kill",
+	ac_emit_llvm_intrinsic(&ctx->ac, "llvm.AMDGPU.kill",
 			    ctx->voidt, &kill, 1, 0);
 
 	/* loop num outputs */
@@ -3111,8 +3111,8 @@ visit_emit_vertex(struct nir_to_llvm_context *ctx,
 	LLVMBuildStore(ctx->builder, gs_next_vertex, ctx->gs_next_vertex[stream]);
 	args[0] = LLVMConstInt(ctx->i32, SENDMSG_GS_OP_EMIT | SENDMSG_GS | (stream << 8), false);
 	args[1] = ctx->gs_wave_id;
-	emit_llvm_intrinsic(ctx, "llvm.SI.sendmsg",
-			    ctx->voidt, args, 2, 0);
+	ac_emit_llvm_intrinsic(&ctx->ac, "llvm.SI.sendmsg",
+			       ctx->voidt, args, 2, 0);
 }
 
 static void
@@ -3125,8 +3125,8 @@ visit_end_primitive(struct nir_to_llvm_context *ctx,
 	args[0] = LLVMConstInt(ctx->i32, SENDMSG_GS_OP_CUT | SENDMSG_GS | (stream << 8), false);
 	args[1] = ctx->gs_wave_id;
 	
-	emit_llvm_intrinsic(ctx, "llvm.SI.sendmsg", ctx->voidt,
-			    args, 2, 0);
+	ac_emit_llvm_intrinsic(&ctx->ac, "llvm.SI.sendmsg", ctx->voidt,
+			       args, 2, 0);
 }
 
 
@@ -4572,7 +4572,7 @@ handle_vs_outputs_post(struct nir_to_llvm_context *ctx)
 static void
 handle_es_outputs_post(struct nir_to_llvm_context *ctx)
 {
-	int i, j;
+	int j;
 	uint64_t max_output_written = 0;
 	for (unsigned i = 0; i < RADEON_LLVM_MAX_OUTPUTS; ++i) {
 		LLVMValueRef *out_ptr = &ctx->outputs[i * 4];
@@ -4715,8 +4715,8 @@ emit_gs_epilogue(struct nir_to_llvm_context *ctx)
 
 	args[0] = LLVMConstInt(ctx->i32, SENDMSG_GS_OP_NOP | SENDMSG_GS_DONE, false);
 	args[1] = ctx->gs_wave_id;
-	emit_llvm_intrinsic(ctx, "llvm.SI.sendmsg",
-			    ctx->voidt, args, 2, 0);
+	ac_emit_llvm_intrinsic(&ctx->ac, "llvm.SI.sendmsg",
+			       ctx->voidt, args, 2, 0);
 }
 
 static void
@@ -4777,8 +4777,6 @@ static void ac_llvm_finalize_module(struct nir_to_llvm_context * ctx)
 static void
 ac_setup_rings(struct nir_to_llvm_context *ctx)
 {
-	int i;
-
 	if (ctx->stage == MESA_SHADER_VERTEX && ctx->options->key.vs.as_es) {
 		ctx->esgs_ring = build_indexed_load_const(ctx, ctx->ring_offsets, ctx->i32zero);
 	}
@@ -5125,10 +5123,10 @@ ac_gs_copy_shader_emit(struct nir_to_llvm_context *ctx)
 					       (idx * 4 + j) *
 					       ctx->gs_max_out_vertices * 16 * 4, false);
 
-			value = emit_llvm_intrinsic(ctx,
-						    "llvm.SI.buffer.load.dword.i32.i32",
-						    ctx->i32, args, 9,
-						    AC_FUNC_ATTR_READONLY);
+			value = ac_emit_llvm_intrinsic(&ctx->ac,
+						       "llvm.SI.buffer.load.dword.i32.i32",
+						       ctx->i32, args, 9,
+						       AC_FUNC_ATTR_READONLY);
 
 			LLVMBuildStore(ctx->builder,
 				       to_float(ctx, value), ctx->outputs[radeon_llvm_reg_index_soa(i, j)]);
@@ -5152,11 +5150,16 @@ void ac_create_gs_copy_shader(LLVMTargetMachineRef tm,
 	ctx.module = LLVMModuleCreateWithNameInContext("shader", ctx.context);
 	ctx.options = options;
 	ctx.shader_info = shader_info;
+
+	ac_llvm_context_init(&ctx.ac, ctx.context);
+	ctx.ac.module = ctx.module;
+
 	ctx.is_gs_copy_shader = true;
 	LLVMSetTarget(ctx.module, "amdgcn--");
 	setup_types(&ctx);
 
 	ctx.builder = LLVMCreateBuilderInContext(ctx.context);
+	ctx.ac.builder = ctx.builder;
 	ctx.stage = MESA_SHADER_VERTEX;
 
 	create_function(&ctx, NULL);
