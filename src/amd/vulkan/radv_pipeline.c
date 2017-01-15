@@ -1470,7 +1470,7 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 					       pStages[MESA_SHADER_GEOMETRY]->pName,
 					       MESA_SHADER_GEOMETRY,
 					       pStages[MESA_SHADER_GEOMETRY]->pSpecializationInfo,
-					       pipeline->layout, &key, dump);
+					       pipeline->layout, &key);
 
 		pipeline->active_stages |= mesa_to_vk_shader_stage(MESA_SHADER_GEOMETRY);
 
