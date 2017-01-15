@@ -2317,6 +2317,11 @@ void radv_CmdExecuteCommands(
 		if (secondary->compute_scratch_size_needed > primary->compute_scratch_size_needed)
 			primary->compute_scratch_size_needed = secondary->compute_scratch_size_needed;
 
+		if (secondary->esgs_ring_size_needed > primary->esgs_ring_size_needed)
+			primary->esgs_ring_size_needed = secondary->esgs_ring_size_needed;
+		if (secondary->gsvs_ring_size_needed > primary->gsvs_ring_size_needed)
+			primary->gsvs_ring_size_needed = secondary->gsvs_ring_size_needed;
+
 		primary->scratch_needed_mask |= secondary->scratch_needed_mask;
 
 		primary->device->ws->cs_execute_secondary(primary->cs, secondary->cs);
