@@ -337,6 +337,10 @@ radv_pipeline_cache_insert_shader(struct radv_pipeline_cache *cache,
 void radv_shader_variant_destroy(struct radv_device *device,
 				 struct radv_shader_variant *variant);
 
+#define META_CLEAR_UNLAYERED 0
+#define META_CLEAR_LAYERED 1
+#define META_CLEAR_LAYER_COUNT 2
+
 struct radv_meta_state {
 	VkAllocationCallbacks alloc;
 
@@ -347,12 +351,12 @@ struct radv_meta_state {
 	 */
 	struct {
 		VkRenderPass render_pass[NUM_META_FS_KEYS];
-		struct radv_pipeline *color_pipelines[NUM_META_FS_KEYS];
+		struct radv_pipeline *color_pipelines[NUM_META_FS_KEYS][META_CLEAR_LAYER_COUNT];
 
 		VkRenderPass depthstencil_rp;
-		struct radv_pipeline *depth_only_pipeline[NUM_DEPTH_CLEAR_PIPELINES];
-		struct radv_pipeline *stencil_only_pipeline[NUM_DEPTH_CLEAR_PIPELINES];
-		struct radv_pipeline *depthstencil_pipeline[NUM_DEPTH_CLEAR_PIPELINES];
+		struct radv_pipeline *depth_only_pipeline[NUM_DEPTH_CLEAR_PIPELINES][META_CLEAR_LAYER_COUNT];
+		struct radv_pipeline *stencil_only_pipeline[NUM_DEPTH_CLEAR_PIPELINES][META_CLEAR_LAYER_COUNT];
+		struct radv_pipeline *depthstencil_pipeline[NUM_DEPTH_CLEAR_PIPELINES][META_CLEAR_LAYER_COUNT];
 	} clear[1 + MAX_SAMPLES_LOG2];
 
 	struct {
