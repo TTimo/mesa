@@ -437,7 +437,7 @@ void radv_GetPhysicalDeviceFeatures(
 		.wideLines                                = true,
 		.largePoints                              = true,
 		.alphaToOne                               = true,
-		.multiViewport                            = false,
+		.multiViewport                            = true,
 		.samplerAnisotropy                        = true,
 		.textureCompressionETC2                   = false,
 		.textureCompressionASTC_LDR               = false,
