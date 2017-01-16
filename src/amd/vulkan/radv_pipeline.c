@@ -455,7 +455,7 @@ radv_pipeline_create_gs_copy_shader(struct radv_pipeline *pipeline,
 				    bool dump_shader)
 {
 	struct radv_shader_variant *variant = calloc(1, sizeof(struct radv_shader_variant));
-	enum radeon_family chip_family = pipeline->device->instance->physicalDevice.rad_info.family;
+	enum radeon_family chip_family = pipeline->device->physical_device->rad_info.family;
 	LLVMTargetMachineRef tm;
 	if (!variant)
 		return NULL;
@@ -463,7 +463,7 @@ radv_pipeline_create_gs_copy_shader(struct radv_pipeline *pipeline,
 	struct ac_nir_compiler_options options = {0};
 	struct ac_shader_binary binary;
 	options.family = chip_family;
-	options.chip_class = pipeline->device->instance->physicalDevice.rad_info.chip_class;
+	options.chip_class = pipeline->device->physical_device->rad_info.chip_class;
 
 	tm = ac_create_target_machine(chip_family, false);
 	ac_create_gs_copy_shader(tm, nir, &binary, &variant->config, &variant->info, &options, dump_shader);
@@ -1393,7 +1393,7 @@ static void
 calculate_gs_ring_sizes(struct radv_pipeline *pipeline)
 {
 	struct radv_device *device = pipeline->device;
-	unsigned num_se = device->instance->physicalDevice.rad_info.max_se;
+	unsigned num_se = device->physical_device->rad_info.max_se;
 	unsigned wave_size = 64;
 	unsigned max_gs_waves = 32 * num_se; /* max 32 per SE on GCN */
 	unsigned gs_vertex_reuse = 16 * num_se; /* GS_VERTEX_REUSE register (per SE) */

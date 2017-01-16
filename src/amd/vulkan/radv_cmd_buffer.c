@@ -661,7 +661,7 @@ radv_emit_geometry_shader(struct radv_cmd_buffer *cmd_buffer,
 	if (loc->sgpr_idx != -1) {
 		uint32_t stride = gs->info.gs.max_gsvs_emit_size;
 		uint32_t num_entries = 64;
-		bool is_vi = cmd_buffer->device->instance->physicalDevice.rad_info.chip_class >= VI;
+		bool is_vi = cmd_buffer->device->physical_device->rad_info.chip_class >= VI;
 
 		if (is_vi)
 			num_entries *= stride;
@@ -1687,7 +1687,7 @@ VkResult radv_BeginCommandBuffer(
 		}
 
 		uint32_t pad_word = 0xffff1000U;
-		if (cmd_buffer->device->instance->physicalDevice.rad_info.gfx_ib_pad_with_type2)
+		if (cmd_buffer->device->physical_device->rad_info.gfx_ib_pad_with_type2)
 			pad_word = 0x80000000;
 
 		cmd_buffer->scratch_patch_idx = cmd_buffer->cs->cdw;
@@ -2039,7 +2039,7 @@ VkResult radv_EndCommandBuffer(
 		cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_EVENT_WRITE, 0, 0);
 		cmd_buffer->cs_to_patch_ring[idx++] = EVENT_TYPE(V_028A90_VGT_FLUSH) | EVENT_INDEX(0);
 
-		if (cmd_buffer->device->instance->physicalDevice.rad_info.chip_class >= CIK) {
+		if (cmd_buffer->device->physical_device->rad_info.chip_class >= CIK) {
 			cmd_buffer->cs_to_patch_ring[idx++] = PKT3(PKT3_SET_UCONFIG_REG, 2, 0);
 			cmd_buffer->cs_to_patch_ring[idx++] = (R_030900_VGT_ESGS_RING_SIZE - CIK_UCONFIG_REG_OFFSET) >> 2;
 			cmd_buffer->cs_to_patch_ring[idx++] = cmd_buffer->esgs_ring_size_needed >> 8;

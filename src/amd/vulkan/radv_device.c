@@ -725,7 +725,7 @@ radv_queue_finish(struct radv_queue *queue)
 static void
 radv_device_init_gs_info(struct radv_device *device)
 {
-	switch (device->instance->physicalDevice.rad_info.family) {
+	switch (device->physical_device->rad_info.family) {
 	case CHIP_OLAND:
 	case CHIP_HAINAN:
 	case CHIP_KAVERI:
