@@ -546,6 +546,8 @@ radv_emit_hw_vs(struct radv_cmd_buffer *cmd_buffer,
 			       cull_dist_mask << 8 |
 			       clip_dist_mask);
 
+	radeon_set_context_reg(cmd_buffer->cs, R_028AB4_VGT_REUSE_OFF,
+			       S_028AB4_REUSE_OFF(shader->info.vs.writes_viewport_index));
 }
 
 static void
