@@ -415,16 +415,25 @@ si_emit_config(struct radv_physical_device *physical_device,
 	}
 
 	if (physical_device->rad_info.chip_class >= VI) {
+		uint32_t vgt_tess_distribution;
 		radeon_set_context_reg(cs, R_028424_CB_DCC_CONTROL,
 				       S_028424_OVERWRITE_COMBINER_MRT_SHARING_DISABLE(1) |
 				       S_028424_OVERWRITE_COMBINER_WATERMARK(4));
-		radeon_set_context_reg(cs, R_028C58_VGT_VERTEX_REUSE_BLOCK_CNTL, 30);
+		if (physical_device->rad_info.family < CHIP_POLARIS10)
+			radeon_set_context_reg(cs, R_028C58_VGT_VERTEX_REUSE_BLOCK_CNTL, 30);
 		radeon_set_context_reg(cs, R_028C5C_VGT_OUT_DEALLOC_CNTL, 32);
+
+		vgt_tess_distribution = S_028B50_ACCUM_ISOLINE(32) |
+			S_028B50_ACCUM_TRI(11) |
+			S_028B50_ACCUM_QUAD(11) |
+			S_028B50_DONUT_SPLIT(16);
+
+		if (physical_device->rad_info.family == CHIP_FIJI ||
+		    physical_device->rad_info.family >= CHIP_POLARIS10)
+			vgt_tess_distribution |= S_028B50_TRAP_SPLIT(3);
+
 		radeon_set_context_reg(cs, R_028B50_VGT_TESS_DISTRIBUTION,
-				       S_028B50_ACCUM_ISOLINE(32) |
-				       S_028B50_ACCUM_TRI(11) |
-				       S_028B50_ACCUM_QUAD(11) |
-				       S_028B50_DONUT_SPLIT(16));
+				       vgt_tess_distribution);
 	} else {
 		radeon_set_context_reg(cs, R_028C58_VGT_VERTEX_REUSE_BLOCK_CNTL, 14);
 		radeon_set_context_reg(cs, R_028C5C_VGT_OUT_DEALLOC_CNTL, 16);
@@ -600,13 +609,42 @@ si_get_ia_multi_vgt_param(struct radv_cmd_buffer *cmd_buffer,
 	uint32_t num_prims = radv_prims_for_vertices(&cmd_buffer->state.pipeline->graphics.prim_vertex_count, draw_vertex_count);
 	bool multi_instances_smaller_than_primgroup;
 
-	if (radv_pipeline_has_gs(cmd_buffer->state.pipeline))
+	if (radv_pipeline_has_tess(cmd_buffer->state.pipeline))
+		primgroup_size = cmd_buffer->state.pipeline->graphics.tess.num_patches;
+	else if (radv_pipeline_has_gs(cmd_buffer->state.pipeline))
 		primgroup_size = 64;  /* recommended with a GS */
 
 	multi_instances_smaller_than_primgroup = indirect_draw || (instanced_draw &&
 								   num_prims < primgroup_size);
 	/* TODO TES */
+	if (radv_pipeline_has_tess(cmd_buffer->state.pipeline)) {
+		/* SWITCH_ON_EOI must be set if PrimID is used. */
+		if (cmd_buffer->state.pipeline->shaders[MESA_SHADER_TESS_CTRL]->info.tcs.uses_prim_id ||
+		    cmd_buffer->state.pipeline->shaders[MESA_SHADER_TESS_EVAL]->info.tes.uses_prim_id)
+			ia_switch_on_eoi = true;
 
+		/* Bug with tessellation and GS on Bonaire and older 2 SE chips. */
+		if ((family == CHIP_TAHITI ||
+		     family == CHIP_PITCAIRN ||
+		     family == CHIP_BONAIRE) &&
+		    radv_pipeline_has_gs(cmd_buffer->state.pipeline))
+			partial_vs_wave = true;
+
+		/* Needed for 028B6C_DISTRIBUTION_MODE != 0 */
+		if (cmd_buffer->device->has_distributed_tess) {
+			if (radv_pipeline_has_gs(cmd_buffer->state.pipeline)) {
+				partial_es_wave = true;
+
+				if (family == CHIP_TONGA ||
+				    family == CHIP_FIJI ||
+				    family == CHIP_POLARIS10 ||
+				    family == CHIP_POLARIS11)
+					partial_vs_wave = true;
+			} else {
+				partial_vs_wave = true;
+			}
+		}
+	}
 	/* TODO linestipple */
 
 	if (chip_class >= CIK) {
