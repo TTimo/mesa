@@ -382,7 +382,7 @@ void radv_CmdResolveImage(
 	struct radv_device *device = cmd_buffer->device;
 	struct radv_meta_saved_state saved_state;
 	VkDevice device_h = radv_device_to_handle(device);
-	bool use_compute_resolve = false;
+	bool use_compute_resolve = true;
 
 	/* we can use the hw resolve only for single full resolves */
 	if (region_count == 1) {
