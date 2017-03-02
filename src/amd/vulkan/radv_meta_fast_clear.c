@@ -466,6 +466,21 @@ emit_fast_clear_flush(struct radv_cmd_buffer *cmd_buffer,
 	si_emit_cache_flush(cmd_buffer);
 }
 
+static void
+radv_emit_image_set_pred(struct radv_cmd_buffer *cmd_buffer,
+			 struct radv_image *image, bool value)
+{
+	if (value == false) {
+		si_emit_set_pred(cmd_buffer, 0);
+		return;
+	}
+
+	uint64_t va = cmd_buffer->device->ws->buffer_get_va(image->bo) + image->offset;
+	va += image->dcc_pred_offset;
+
+	si_emit_set_pred(cmd_buffer, va);
+}
+
 /**
  */
 void
@@ -483,6 +498,10 @@ radv_fast_clear_flush_image_inplace(struct radv_cmd_buffer *cmd_buffer,
 	radv_meta_save_pass(&saved_pass_state, cmd_buffer);
 	radv_meta_save_graphics_reset_vport_scissor(&saved_state, cmd_buffer);
 
+	if (image->surface.dcc_size) {
+		radv_emit_image_set_pred(cmd_buffer, image, true);
+		radv_set_dcc_pred(cmd_buffer, image, false);
+	}
 	for (uint32_t layer = 0; layer < layer_count; ++layer) {
 		struct radv_image_view iview;
 		const uint32_t samples_log2 = ffs(image->samples) - 1;
@@ -547,6 +566,9 @@ radv_fast_clear_flush_image_inplace(struct radv_cmd_buffer *cmd_buffer,
 		radv_DestroyFramebuffer(device_h, fb_h,
 					&cmd_buffer->pool->alloc);
 
+	}
+	if (image->surface.dcc_size) {
+		radv_emit_image_set_pred(cmd_buffer, image, false);
 	}
 	radv_meta_restore(&saved_state, cmd_buffer);
 	radv_meta_restore_pass(&saved_pass_state, cmd_buffer);
