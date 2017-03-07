@@ -505,7 +505,8 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		arg_types[arg_idx++] = ctx->i32; // GS instance id
 		break;
 	case MESA_SHADER_FRAGMENT:
-		arg_types[arg_idx++] = const_array(ctx->f32, 32); /* sample positions */
+		arg_types[arg_idx++] = const_array(ctx->v16i8, 1); /* sample positions */
+
 		user_sgpr_count = arg_idx;
 		arg_types[arg_idx++] = ctx->i32; /* prim mask */
 		sgpr_count = arg_idx;
@@ -2977,6 +2978,20 @@ static LLVMValueRef lookup_interp_param(struct nir_to_llvm_context *ctx,
 	return NULL;
 }
 
+
+/**
+ * Load a dword from a constant buffer.
+ */
+static LLVMValueRef buffer_load_const(struct nir_to_llvm_context *ctx,
+				      LLVMValueRef resource,
+				      LLVMValueRef offset)
+{
+	LLVMValueRef args[2] = {resource, offset};
+
+	return ac_build_intrinsic(&ctx->ac, "llvm.SI.load.const", ctx->f32, args, 2,
+				  AC_FUNC_ATTR_READNONE | AC_FUNC_ATTR_LEGACY);
+}
+
 static LLVMValueRef load_sample_position(struct nir_to_llvm_context *ctx,
 					 LLVMValueRef sample_id)
 {
@@ -2985,8 +3000,16 @@ static LLVMValueRef load_sample_position(struct nir_to_llvm_context *ctx,
 	LLVMValueRef offset1 = LLVMBuildAdd(ctx->builder, offset0, LLVMConstInt(ctx->i32, 4, false), "");
 	LLVMValueRef result[2];
 
-	result[0] = ac_build_indexed_load_const(&ctx->ac, ctx->sample_positions, offset0);
-	result[1] = ac_build_indexed_load_const(&ctx->ac, ctx->sample_positions, offset1);
+	LLVMValueRef rsrc = ac_build_gep0(&ctx->ac, ctx->sample_positions, ctx->i32zero);
+
+	rsrc = cast_ptr(ctx, rsrc, ctx->v4i32);
+	LLVMSetMetadata(rsrc, ctx->uniform_md_kind, ctx->empty_md);
+	rsrc = LLVMBuildLoad(ctx->builder, rsrc, "");
+
+	rsrc = LLVMBuildBitCast(ctx->builder, rsrc, LLVMVectorType(ctx->i8, 16), "");
+
+	result[0] = buffer_load_const(ctx, rsrc, offset0);
+	result[1] = buffer_load_const(ctx, rsrc, offset1);
 
 	return ac_build_gather_values(&ctx->ac, result, 2);
 }

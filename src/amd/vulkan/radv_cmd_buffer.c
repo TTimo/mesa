@@ -444,7 +444,7 @@ radv_update_multisample_state(struct radv_cmd_buffer *cmd_buffer,
 	uint32_t samples_offset;
 	void *samples_ptr;
 	void *src;
-	radv_cmd_buffer_upload_alloc(cmd_buffer, num_samples * 4 * 2, 256, &samples_offset,
+	radv_cmd_buffer_upload_alloc(cmd_buffer, (4 * 4) + num_samples * 4 * 2, 256, &samples_offset,
 				     &samples_ptr);
 	switch (num_samples) {
 	case 1:
@@ -465,10 +465,22 @@ radv_update_multisample_state(struct radv_cmd_buffer *cmd_buffer,
 	default:
 		unreachable("unknown number of samples");
 	}
-	memcpy(samples_ptr, src, num_samples * 4 * 2);
+	memcpy((char *)samples_ptr + 16, src, num_samples * 4 * 2);
 
 	uint64_t va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->upload.upload_bo);
 	va += samples_offset;
+
+	uint64_t samples_va = va + 16;
+	uint32_t *dst = samples_ptr;
+	dst[0] = samples_va;
+	dst[1] = S_008F04_BASE_ADDRESS_HI(samples_va >> 32);
+	dst[2] = num_samples * 4 * 2;
+	dst[3] = S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
+	  S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
+	  S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
+	  S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
+	  S_008F0C_NUM_FORMAT(V_008F0C_BUF_NUM_FORMAT_FLOAT) |
+	  S_008F0C_DATA_FORMAT(V_008F0C_BUF_DATA_FORMAT_32);
 
 	radv_emit_userdata_address(cmd_buffer, pipeline, MESA_SHADER_FRAGMENT,
 				   AC_UD_PS_SAMPLE_POS, va);
