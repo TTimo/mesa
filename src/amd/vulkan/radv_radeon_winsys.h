@@ -347,7 +347,7 @@ struct radeon_winsys {
 			   uint64_t timeout);
 
 	struct radeon_winsys_sem *(*create_sem)(struct radeon_winsys *ws);
-	void (*destroy_sem)(struct radeon_winsys_sem *sem);
+	void (*destroy_sem)(struct radeon_winsys *ws, struct radeon_winsys_sem *sem);
 
 };
 

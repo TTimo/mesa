@@ -2434,7 +2434,7 @@ void radv_DestroySemaphore(
 	if (!_semaphore)
 		return;
 
-	device->ws->destroy_sem(sem);
+	device->ws->destroy_sem(device->ws, sem);
 }
 
 VkResult radv_CreateEvent(
