@@ -154,6 +154,9 @@ struct nir_to_llvm_context {
 	bool is_gs_copy_shader;
 	LLVMValueRef gs_next_vertex;
 	unsigned gs_max_out_vertices;
+	uint32_t num_sgpr_push_consts;
+	LLVMValueRef sgpr_push_constants[AC_UD_MAX_PUSHCONST];
+
 };
 
 static LLVMValueRef get_sampler_desc(struct nir_to_llvm_context *ctx,
@@ -460,6 +463,20 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		}
 	}
 
+	ctx->shader_info->sgpr_push_const_mask = 0;
+	if (need_push_constants) {
+		if (ctx->stage == MESA_SHADER_COMPUTE ||
+		    ctx->stage == MESA_SHADER_FRAGMENT)
+		{
+			if (ctx->options->layout->push_constant_size <= 16) {
+				uint32_t val = ctx->options->layout->push_constant_size / 4;
+				ctx->num_sgpr_push_consts = val;
+				ctx->shader_info->sgpr_push_const_mask = (1 << val) - 1;
+				need_push_constants = false;
+			}
+		}
+	}
+
 	if (need_push_constants) {
 		/* 1 for push constants and dynamic descriptors */
 		array_params_mask |= (1 << arg_idx);
@@ -469,6 +486,9 @@ static void create_function(struct nir_to_llvm_context *ctx)
 	switch (ctx->stage) {
 	case MESA_SHADER_COMPUTE:
 		arg_types[arg_idx++] = LLVMVectorType(ctx->i32, 3); /* grid size */
+		for (i = 0; i < ctx->num_sgpr_push_consts; i++) {
+			arg_types[arg_idx++] = ctx->i32;
+		}
 		user_sgpr_count = arg_idx;
 		arg_types[arg_idx++] = LLVMVectorType(ctx->i32, 3);
 		arg_types[arg_idx++] = ctx->i32;
@@ -512,6 +532,9 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		break;
 	case MESA_SHADER_FRAGMENT:
 		arg_types[arg_idx++] = const_array(ctx->f32, 32); /* sample positions */
+		for (i = 0; i < ctx->num_sgpr_push_consts; i++) {
+			arg_types[arg_idx++] = ctx->i32;
+		}
 		user_sgpr_count = arg_idx;
 		arg_types[arg_idx++] = ctx->i32; /* prim mask */
 		sgpr_count = arg_idx;
@@ -595,6 +618,11 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		user_sgpr_idx += 3;
 		ctx->num_work_groups =
 		    LLVMGetParam(ctx->main_function, arg_idx++);
+		for (i = 0; i < ctx->num_sgpr_push_consts; i++) {
+			set_userdata_location(&ctx->shader_info->user_sgprs_locs.pushconsts[i], user_sgpr_idx, 1);
+			user_sgpr_idx++;
+			ctx->sgpr_push_constants[i] = LLVMGetParam(ctx->main_function, arg_idx++);
+		}
 		ctx->workgroup_ids =
 		    LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->tg_size =
@@ -642,6 +670,11 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		set_userdata_location_shader(ctx, AC_UD_PS_SAMPLE_POS, user_sgpr_idx, 2);
 		user_sgpr_idx += 2;
 		ctx->sample_positions = LLVMGetParam(ctx->main_function, arg_idx++);
+		for (i = 0; i < ctx->num_sgpr_push_consts; i++) {
+			set_userdata_location(&ctx->shader_info->user_sgprs_locs.pushconsts[i], user_sgpr_idx, 1);
+			user_sgpr_idx++;
+			ctx->sgpr_push_constants[i] = LLVMGetParam(ctx->main_function, arg_idx++);
+		}
 		ctx->prim_mask = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->persp_sample = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->persp_center = LLVMGetParam(ctx->main_function, arg_idx++);
@@ -1851,9 +1884,21 @@ static LLVMValueRef visit_load_push_constant(struct nir_to_llvm_context *ctx,
                                              nir_intrinsic_instr *instr)
 {
 	LLVMValueRef ptr, addr;
+	LLVMValueRef src0 = get_src(ctx, instr->src[0]);
+	unsigned index = nir_intrinsic_base(instr);
+	addr = LLVMConstInt(ctx->i32, index, 0);
+	addr = LLVMBuildAdd(ctx->builder, addr, src0, "");
+	if (LLVMIsConstant(src0)) {
+		index = nir_intrinsic_base(instr);
+		index += LLVMConstIntGetZExtValue(src0);
+		index /= 4;
 
-	addr = LLVMConstInt(ctx->i32, nir_intrinsic_base(instr), 0);
-	addr = LLVMBuildAdd(ctx->builder, addr, get_src(ctx, instr->src[0]), "");
+		uint32_t bits = (1 << instr->num_components) - 1;
+
+		if ((bits << index) & ctx->shader_info->sgpr_push_const_mask) {
+			return ac_build_gather_values(&ctx->ac, &ctx->sgpr_push_constants[index], instr->num_components);
+		}
+	}
 
 	ptr = ac_build_gep0(&ctx->ac, ctx->push_constants, addr);
 	ptr = cast_ptr(ctx, ptr, get_def_type(ctx, &instr->dest.ssa));

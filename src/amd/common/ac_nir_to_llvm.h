@@ -82,10 +82,11 @@ enum ac_ud_index {
 };
 
 #define AC_UD_MAX_SETS 4
-
+#define AC_UD_MAX_PUSHCONST 4
 struct ac_userdata_locations {
 	struct ac_userdata_info descriptor_sets[AC_UD_MAX_SETS];
 	struct ac_userdata_info shader_data[AC_UD_MAX_UD];
+	struct ac_userdata_info pushconsts[AC_UD_MAX_PUSHCONST];
 };
 
 struct ac_shader_variant_info {
@@ -94,6 +95,7 @@ struct ac_shader_variant_info {
 	unsigned num_input_sgprs;
 	unsigned num_input_vgprs;
 	bool need_push_constants;
+	unsigned sgpr_push_const_mask;
 	union {
 		struct {
 			unsigned param_exports;

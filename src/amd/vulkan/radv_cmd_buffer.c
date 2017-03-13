@@ -417,6 +417,30 @@ radv_emit_userdata_address(struct radv_cmd_buffer *cmd_buffer,
 	radeon_emit(cmd_buffer->cs, va >> 32);
 }
 
+static struct ac_userdata_info *
+radv_lookup_push_const_sgpr(struct radv_pipeline *pipeline,
+			    gl_shader_stage stage,
+			    int idx)
+{
+	return &pipeline->shaders[stage]->info.user_sgprs_locs.pushconsts[idx];
+}
+
+static void
+radv_emit_one_sgpr_pushconst(struct radv_cmd_buffer *cmd_buffer,
+			     struct radv_pipeline *pipeline,
+			     gl_shader_stage stage,
+			     int idx, uint32_t value)
+{
+	struct ac_userdata_info *loc = radv_lookup_push_const_sgpr(pipeline, stage, idx);
+	uint32_t base_reg = shader_stage_to_user_data_0(stage, radv_pipeline_has_gs(pipeline));
+	if (loc->sgpr_idx == -1)
+		return;
+	assert(!loc->indirect);
+	radeon_set_sh_reg_seq(cmd_buffer->cs, base_reg + loc->sgpr_idx * 4, 1);
+	radeon_emit(cmd_buffer->cs, value);
+}
+
+
 static void
 radv_update_multisample_state(struct radv_cmd_buffer *cmd_buffer,
 			      struct radv_pipeline *pipeline)
@@ -1293,6 +1317,29 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 	if (!(stages & emit_stages))
 		return;
 
+	/* flush sgpr user constants */
+	if (emit_stages & VK_SHADER_STAGE_COMPUTE_BIT) {
+		if (pipeline->shaders[MESA_SHADER_COMPUTE]->info.sgpr_push_const_mask) {
+			uint32_t mymask = pipeline->shaders[MESA_SHADER_COMPUTE]->info.sgpr_push_const_mask;
+			while (mymask) {
+				int idx = u_bit_scan(&mymask);
+				uint32_t value = *(uint32_t *)&cmd_buffer->push_constants[idx * 4];
+				radv_emit_one_sgpr_pushconst(cmd_buffer, pipeline, MESA_SHADER_COMPUTE,
+							     idx, value);
+			}
+		}
+	}
+	if (emit_stages & VK_SHADER_STAGE_FRAGMENT_BIT) {
+		if (pipeline->shaders[MESA_SHADER_FRAGMENT]->info.sgpr_push_const_mask) {
+			uint32_t mymask = pipeline->shaders[MESA_SHADER_FRAGMENT]->info.sgpr_push_const_mask;
+			while (mymask) {
+				int idx = u_bit_scan(&mymask);
+				uint32_t value = *(uint32_t *)&cmd_buffer->push_constants[idx * 4];
+				radv_emit_one_sgpr_pushconst(cmd_buffer, pipeline, MESA_SHADER_FRAGMENT,
+							     idx, value);
+			}
+		}
+	}
 	if (!radv_cmd_buffer_upload_alloc(cmd_buffer, layout->push_constant_size +
 					  16 * layout->dynamic_offset_count,
 					  256, &offset, &ptr))
@@ -1306,6 +1353,7 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 	va += offset;
 
 	emit_stages &= stages;
+
 	if ((emit_stages & VK_SHADER_STAGE_VERTEX_BIT) &&
 	    pipeline->shaders[MESA_SHADER_VERTEX]->info.need_push_constants)
 		radv_emit_userdata_address(cmd_buffer, pipeline, MESA_SHADER_VERTEX,
