@@ -202,6 +202,7 @@ VkResult radv_CreatePipelineLayout(
 
 
 	ctx = _mesa_sha1_init();
+	layout->dynamic_offset_stages = 0;
 	for (uint32_t set = 0; set < pCreateInfo->setLayoutCount; set++) {
 		RADV_FROM_HANDLE(radv_descriptor_set_layout, set_layout,
 				 pCreateInfo->pSetLayouts[set]);
@@ -213,6 +214,7 @@ VkResult radv_CreatePipelineLayout(
 		}
 		_mesa_sha1_update(ctx, set_layout->binding,
 				  sizeof(set_layout->binding[0]) * set_layout->binding_count);
+		layout->dynamic_offset_stages |= set_layout->dynamic_shader_stages;
 	}
 
 	layout->dynamic_offset_count = dynamic_offset_count;

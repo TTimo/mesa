@@ -1280,9 +1280,17 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 	unsigned offset;
 	void *ptr;
 	uint64_t va;
+	VkShaderStageFlags emit_stages;
 
 	stages &= cmd_buffer->push_constant_stages;
-	if (!stages || !layout || (!layout->push_constant_size && !layout->dynamic_offset_count))
+	if (!stages || !layout)
+		return;
+
+	if (!layout->push_constant_size || !layout->dynamic_offset_count)
+		return;
+
+	emit_stages = layout->push_constant_stages | layout->dynamic_offset_stages;
+	if (!(stages & emit_stages))
 		return;
 
 	if (!radv_cmd_buffer_upload_alloc(cmd_buffer, layout->push_constant_size +
