@@ -472,7 +472,8 @@ static void create_function(struct nir_to_llvm_context *ctx)
 				uint32_t val = ctx->options->layout->push_constant_size / 4;
 				ctx->num_sgpr_push_consts = val;
 				ctx->shader_info->sgpr_push_const_mask = (1 << val) - 1;
-				need_push_constants = false;
+				if (!ctx->options->layout->dynamic_offset_count)
+					need_push_constants = false;
 			}
 		}
 	}
