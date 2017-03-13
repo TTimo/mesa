@@ -93,6 +93,7 @@ struct ac_shader_variant_info {
 	unsigned num_user_sgprs;
 	unsigned num_input_sgprs;
 	unsigned num_input_vgprs;
+	bool need_push_constants;
 	union {
 		struct {
 			unsigned param_exports;

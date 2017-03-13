@@ -1286,7 +1286,7 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 	if (!stages || !layout)
 		return;
 
-	if (!layout->push_constant_size || !layout->dynamic_offset_count)
+	if (!layout->push_constant_size && !layout->dynamic_offset_count)
 		return;
 
 	emit_stages = layout->push_constant_stages | layout->dynamic_offset_stages;
@@ -1305,19 +1305,24 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 	va = cmd_buffer->device->ws->buffer_get_va(cmd_buffer->upload.upload_bo);
 	va += offset;
 
-	if (stages & VK_SHADER_STAGE_VERTEX_BIT)
+	emit_stages &= stages;
+	if ((emit_stages & VK_SHADER_STAGE_VERTEX_BIT) &&
+	    pipeline->shaders[MESA_SHADER_VERTEX]->info.need_push_constants)
 		radv_emit_userdata_address(cmd_buffer, pipeline, MESA_SHADER_VERTEX,
 					   AC_UD_PUSH_CONSTANTS, va);
 
-	if (stages & VK_SHADER_STAGE_FRAGMENT_BIT)
+	if ((emit_stages & VK_SHADER_STAGE_FRAGMENT_BIT) &&
+	    pipeline->shaders[MESA_SHADER_FRAGMENT]->info.need_push_constants)
 		radv_emit_userdata_address(cmd_buffer, pipeline, MESA_SHADER_FRAGMENT,
 					   AC_UD_PUSH_CONSTANTS, va);
 
-	if ((stages & VK_SHADER_STAGE_GEOMETRY_BIT) && radv_pipeline_has_gs(pipeline))
+	if ((emit_stages & VK_SHADER_STAGE_GEOMETRY_BIT) && radv_pipeline_has_gs(pipeline) &&
+	    pipeline->shaders[MESA_SHADER_GEOMETRY]->info.need_push_constants)
 		radv_emit_userdata_address(cmd_buffer, pipeline, MESA_SHADER_GEOMETRY,
 					   AC_UD_PUSH_CONSTANTS, va);
 
-	if (stages & VK_SHADER_STAGE_COMPUTE_BIT)
+	if ((emit_stages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+	    pipeline->shaders[MESA_SHADER_COMPUTE]->info.need_push_constants)
 		radv_emit_userdata_address(cmd_buffer, pipeline, MESA_SHADER_COMPUTE,
 					   AC_UD_PUSH_CONSTANTS, va);
 

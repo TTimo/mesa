@@ -583,6 +583,7 @@ static void create_function(struct nir_to_llvm_context *ctx)
 	}
 
 	if (need_push_constants) {
+		ctx->shader_info->need_push_constants = true;
 		ctx->push_constants = LLVMGetParam(ctx->main_function, arg_idx++);
 		set_userdata_location_shader(ctx, AC_UD_PUSH_CONSTANTS, user_sgpr_idx, 2);
 		user_sgpr_idx += 2;
