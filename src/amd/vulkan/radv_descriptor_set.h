@@ -79,7 +79,7 @@ struct radv_pipeline_layout {
    uint32_t num_sets;
    uint32_t push_constant_size;
    uint32_t dynamic_offset_count;
-
+   uint32_t push_constant_stages;
    unsigned char sha1[20];
 };
 

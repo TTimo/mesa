@@ -444,6 +444,7 @@ static void create_function(struct nir_to_llvm_context *ctx)
 	if (!ctx->options->layout)
 		need_push_constants = false;
 	else if (!ctx->options->layout->push_constant_size &&
+		 !(ctx->options->layout->push_constant_stages & (1 << ctx->stage)) &&
 		 !ctx->options->layout->dynamic_offset_count)
 		need_push_constants = false;
 
