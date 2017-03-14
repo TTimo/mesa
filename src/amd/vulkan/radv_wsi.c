@@ -455,6 +455,19 @@ VkResult radv_QueuePresentKHR(
 	for (uint32_t i = 0; i < pPresentInfo->swapchainCount; i++) {
 		RADV_FROM_HANDLE(wsi_swapchain, swapchain, pPresentInfo->pSwapchains[i]);
 		struct radeon_winsys_cs *cs;
+		struct radeon_winsys_sem **wait_sem_array = NULL;
+
+		if (pPresentInfo->waitSemaphoreCount) {
+			wait_sem_array = malloc(sizeof(struct radeon_winsys_sem *) * pPresentInfo->waitSemaphoreCount);
+			if (!wait_sem_array)
+				return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+			for (uint32_t j = 0; j < pPresentInfo->waitSemaphoreCount; j++) {
+				RADV_FROM_HANDLE(radv_semaphore, sem, pPresentInfo->pWaitSemaphores[j]);
+				wait_sem_array[j] = sem->sem;
+			}
+		}
+
 		assert(radv_device_from_handle(swapchain->device) == queue->device);
 		if (swapchain->fences[0] == VK_NULL_HANDLE) {
 			result = radv_CreateFence(radv_device_to_handle(queue->device),
@@ -480,7 +493,7 @@ VkResult radv_QueuePresentKHR(
 		queue->device->ws->cs_submit(ctx, queue->queue_idx,
 					     &cs,
 					     1, NULL, NULL,
-					     (struct radeon_winsys_sem **)pPresentInfo->pWaitSemaphores,
+					     wait_sem_array,
 					     pPresentInfo->waitSemaphoreCount, NULL, 0, false, base_fence);
 		fence->submitted = true;
 
@@ -500,6 +513,7 @@ VkResult radv_QueuePresentKHR(
 					   1, &last, true, 1);
 		}
 
+		free(wait_sem_array);
 	}
 
 	return VK_SUCCESS;

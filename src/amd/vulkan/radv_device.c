@@ -1805,15 +1805,37 @@ VkResult radv_QueueSubmit(
 		bool do_flush = !i;
 		bool can_patch = !do_flush;
 		uint32_t advance;
+		struct radeon_winsys_sem **wait_sem_array = NULL, **signal_sem_array = NULL;
+
+		if (pSubmits[i].waitSemaphoreCount) {
+			wait_sem_array = malloc(sizeof(struct radeon_winsys_sem *) * pSubmits[i].waitSemaphoreCount);
+			if (!wait_sem_array)
+				return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+			for (uint32_t j = 0; j < pSubmits[i].waitSemaphoreCount; j++) {
+				RADV_FROM_HANDLE(radv_semaphore, sem, pSubmits[i].pWaitSemaphores[j]);
+				wait_sem_array[j] = sem->sem;
+			}
+		}
+
+		if (pSubmits[i].signalSemaphoreCount) {
+			signal_sem_array = malloc(sizeof(struct radeon_winsys_sem *) * pSubmits[i].signalSemaphoreCount);
+			if (!signal_sem_array)
+				return VK_ERROR_OUT_OF_HOST_MEMORY;
+			for (uint32_t j = 0; j < pSubmits[i].signalSemaphoreCount; j++) {
+				RADV_FROM_HANDLE(radv_semaphore, sem, pSubmits[i].pSignalSemaphores[j]);
+				signal_sem_array[j] = sem->sem;
+			}
+		}
 
 		if (!pSubmits[i].commandBufferCount) {
 			if (pSubmits[i].waitSemaphoreCount || pSubmits[i].signalSemaphoreCount) {
 				ret = queue->device->ws->cs_submit(ctx, queue->queue_idx,
 								   &queue->device->empty_cs[queue->queue_family_index],
 								   1, NULL, NULL,
-								   (struct radeon_winsys_sem **)pSubmits[i].pWaitSemaphores,
+								   wait_sem_array,
 								   pSubmits[i].waitSemaphoreCount,
-								   (struct radeon_winsys_sem **)pSubmits[i].pSignalSemaphores,
+								   signal_sem_array,
 								   pSubmits[i].signalSemaphoreCount,
 								   false, base_fence);
 				if (ret) {
@@ -1852,9 +1874,9 @@ VkResult radv_QueueSubmit(
 
 			ret = queue->device->ws->cs_submit(ctx, queue->queue_idx, cs_array + j,
 							advance, initial_preamble_cs, continue_preamble_cs,
-							(struct radeon_winsys_sem **)pSubmits[i].pWaitSemaphores,
+							   wait_sem_array,
 							b ? pSubmits[i].waitSemaphoreCount : 0,
-							(struct radeon_winsys_sem **)pSubmits[i].pSignalSemaphores,
+							   signal_sem_array,
 							e ? pSubmits[i].signalSemaphoreCount : 0,
 							can_patch, base_fence);
 
@@ -1876,6 +1898,8 @@ VkResult radv_QueueSubmit(
 				}
 			}
 		}
+		free(wait_sem_array);
+		free(signal_sem_array);
 		free(cs_array);
 	}
 
@@ -2414,13 +2438,24 @@ VkResult radv_CreateSemaphore(
 	VkSemaphore*                                pSemaphore)
 {
 	RADV_FROM_HANDLE(radv_device, device, _device);
-	struct radeon_winsys_sem *sem;
+	const VkExportSemaphoreCreateInfoKHX *export =
+		vk_find_struct_const(pCreateInfo->pNext, EXPORT_SEMAPHORE_CREATE_INFO_KHX);
+	VkExternalSemaphoreHandleTypeFlagsKHX handleTypes =
+		export ? export->handleTypes : 0;
 
-	sem = device->ws->create_sem(device->ws);
+	struct radv_semaphore *sem = vk_alloc2(&device->alloc, pAllocator,
+					       sizeof(*sem), 8,
+					       VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 	if (!sem)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-	*pSemaphore = radeon_winsys_sem_to_handle(sem);
+	sem->sem = device->ws->create_sem(device->ws);
+	if (!sem->sem) {
+		vk_free2(&device->alloc, pAllocator, sem);
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+
+	*pSemaphore = radv_semaphore_to_handle(sem);
 	return VK_SUCCESS;
 }
 
@@ -2430,11 +2465,12 @@ void radv_DestroySemaphore(
 	const VkAllocationCallbacks*                pAllocator)
 {
 	RADV_FROM_HANDLE(radv_device, device, _device);
-	RADV_FROM_HANDLE(radeon_winsys_sem, sem, _semaphore);
+	RADV_FROM_HANDLE(radv_semaphore, sem, _semaphore);
 	if (!_semaphore)
 		return;
 
-	device->ws->destroy_sem(device->ws, sem);
+	device->ws->destroy_sem(device->ws, sem->sem);
+	vk_free2(&device->alloc, pAllocator, sem);
 }
 
 VkResult radv_CreateEvent(
@@ -3145,10 +3181,43 @@ VkResult radv_GetMemoryFdPropertiesKHX(VkDevice _device,
    return VK_ERROR_INVALID_EXTERNAL_HANDLE_KHX;
 }
 
-VkResult radv_GetSemaphoreFdKHX(VkDevice device,
-				VkSemaphore semaphore,
+VkResult radv_ImportSemaphoreFdKHX(VkDevice _device,
+				   const VkImportSemaphoreFdInfoKHX *pImportSemaphoreFdInfo)
+{
+	RADV_FROM_HANDLE(radv_device, device, _device);
+	RADV_FROM_HANDLE(radv_semaphore, sem, pImportSemaphoreFdInfo->semaphore);
+	
+	assert(pImportSemaphoreFdInfo->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHX);
+
+	int ret = device->ws->import_sem(device->ws, pImportSemaphoreFdInfo->fd, &sem->sem);
+
+	close(pImportSemaphoreFdInfo->fd);
+	return VK_SUCCESS;
+}
+
+VkResult radv_GetSemaphoreFdKHX(VkDevice _device,
+				VkSemaphore _semaphore,
 				VkExternalSemaphoreHandleTypeFlagsKHX handleType,
 				int *pFd)
 {
+	RADV_FROM_HANDLE(radv_device, device, _device);
+	RADV_FROM_HANDLE(radv_semaphore, sem, _semaphore);
+	int ret;
+
+	ret = device->ws->export_sem(device->ws, sem->sem, pFd);
+	if (ret)
+		return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHX);
 	return VK_SUCCESS;
+}
+
+void radv_GetPhysicalDeviceExternalSemaphorePropertiesKHX(
+	VkPhysicalDevice                            physicalDevice,
+	const VkPhysicalDeviceExternalSemaphoreInfoKHX* pExternalSemaphoreInfo,
+	VkExternalSemaphorePropertiesKHX*           pExternalSemaphoreProperties)
+{
+	pExternalSemaphoreProperties->exportFromImportedHandleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHX;
+	pExternalSemaphoreProperties->compatibleHandleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHX;
+	pExternalSemaphoreProperties->externalSemaphoreFeatures = VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT_KHX |
+		VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT_KHX;
+
 }

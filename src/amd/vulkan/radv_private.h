@@ -1335,6 +1335,10 @@ struct radv_query_pool {
 	VkQueryType type;
 };
 
+struct radv_semaphore {
+	struct radeon_winsys_sem *sem;
+};
+
 VkResult
 radv_temp_descriptor_set_create(struct radv_device *device,
 				struct radv_cmd_buffer *cmd_buffer,
@@ -1413,6 +1417,6 @@ RADV_DEFINE_NONDISP_HANDLE_CASTS(radv_query_pool, VkQueryPool)
 RADV_DEFINE_NONDISP_HANDLE_CASTS(radv_render_pass, VkRenderPass)
 RADV_DEFINE_NONDISP_HANDLE_CASTS(radv_sampler, VkSampler)
 RADV_DEFINE_NONDISP_HANDLE_CASTS(radv_shader_module, VkShaderModule)
-RADV_DEFINE_NONDISP_HANDLE_CASTS(radeon_winsys_sem, VkSemaphore)
+RADV_DEFINE_NONDISP_HANDLE_CASTS(radv_semaphore, VkSemaphore)
 
 #endif /* RADV_PRIVATE_H */

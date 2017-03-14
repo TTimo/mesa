@@ -349,6 +349,9 @@ struct radeon_winsys {
 	struct radeon_winsys_sem *(*create_sem)(struct radeon_winsys *ws);
 	void (*destroy_sem)(struct radeon_winsys *ws, struct radeon_winsys_sem *sem);
 
+	int (*export_sem)(struct radeon_winsys *ws, struct radeon_winsys_sem *sem, int *handle);
+	int (*import_sem)(struct radeon_winsys *ws, int handle, struct radeon_winsys_sem **sem);
+
 };
 
 static inline void radeon_emit(struct radeon_winsys_cs *cs, uint32_t value)
