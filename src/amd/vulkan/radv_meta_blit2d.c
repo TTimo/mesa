@@ -413,8 +413,8 @@ radv_meta_blit2d_normal_dst(struct radv_cmd_buffer *cmd_buffer,
 			.y = rects[r].dst_y,
 			.width = rects[r].width,
 			.height = rects[r].height,
-			.minDepth = 0.0f,
-			.maxDepth = 1.0f
+			.minDepth = -65536.0f,
+			.maxDepth = 65536.0f
 		});
 
 		radv_CmdSetScissor(radv_cmd_buffer_to_handle(cmd_buffer), 0, 1, &(VkRect2D) {
