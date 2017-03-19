@@ -1000,6 +1000,7 @@ VkResult radv_CreateDevice(
 			si_cs_emit_cache_flush(device->flush_cs[family],
 			                       device->physical_device->rad_info.chip_class,
 			                       family == RADV_QUEUE_COMPUTE && device->physical_device->rad_info.chip_class >= CIK,
+					       (family == RADV_QUEUE_COMPUTE ? RADV_CMD_FLAG_CS_PARTIAL_FLUSH : RADV_CMD_FLAG_CS_PARTIAL_FLUSH | RADV_CMD_FLAG_PS_PARTIAL_FLUSH) |
 			                       RADV_CMD_FLAG_INV_ICACHE |
 			                       RADV_CMD_FLAG_INV_SMEM_L1 |
 			                       RADV_CMD_FLAG_INV_VMEM_L1 |
@@ -1783,7 +1784,7 @@ VkResult radv_QueueSubmit(
 
 	for (uint32_t i = 0; i < submitCount; i++) {
 		struct radeon_winsys_cs **cs_array;
-		bool do_flush = !i;
+		bool do_flush = true;
 		bool can_patch = !do_flush;
 		uint32_t advance;
 
