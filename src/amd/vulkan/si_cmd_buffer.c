@@ -516,8 +516,8 @@ si_write_viewport(struct radeon_winsys_cs *cs, int first_vp,
 		radeon_emit(cs, fui(0.0));
 
 		radeon_set_context_reg_seq(cs, R_0282D0_PA_SC_VPORT_ZMIN_0, 2);
-		radeon_emit(cs, fui(0.0));
-		radeon_emit(cs, fui(1.0));
+		radeon_emit(cs, fui(-65536.0));
+		radeon_emit(cs, fui(65536));
 
 		return;
 	}
