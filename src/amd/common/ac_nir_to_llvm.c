@@ -188,7 +188,7 @@ static unsigned shader_io_get_unique_index(gl_varying_slot slot)
 		return 0;
 	if (slot == VARYING_SLOT_TESS_LEVEL_INNER)
 		return 1;
-	if (slot >= VARYING_SLOT_PATCH0 && slot <= VARYING_SLOT_PATCH0)
+	if (slot >= VARYING_SLOT_PATCH0 && slot <= VARYING_SLOT_TESS_MAX)
 		return 2 + (slot - VARYING_SLOT_PATCH0);
 
 	if (slot == VARYING_SLOT_POS)
@@ -2368,10 +2368,8 @@ radv_get_deref_offset(struct nir_to_llvm_context *ctx, nir_deref_var *deref,
 		/* We always lower indirect dereferences for "compact" array vars. */
 		assert(deref_array->deref_array_type == nir_deref_array_type_direct);
 
-		const unsigned total_offset = 0 + deref_array->base_offset;
-		const unsigned slot_offset = total_offset / 4;
-		//		*component = total_offset % 4;
-		offset = LLVMConstInt(ctx->i32, 16 * slot_offset, false);
+		const_offset = deref_array->base_offset;
+		goto out;
 	}
 
 	while (tail->child != NULL) {
@@ -2407,7 +2405,7 @@ radv_get_deref_offset(struct nir_to_llvm_context *ctx, nir_deref_var *deref,
 			unreachable("unsupported deref type");
 
 	}
-
+out:
 	if (const_offset && offset)
 		offset = LLVMBuildAdd(ctx->builder, offset,
 				      LLVMConstInt(ctx->i32, const_offset, 0),
@@ -2504,11 +2502,11 @@ static LLVMValueRef get_tcs_tes_buffer_address_params(struct nir_to_llvm_context
 {
 	LLVMValueRef param_index;
 
-	param_index = LLVMConstInt(ctx->i32, param + const_index, false);
 	if (indir_index)
-		param_index = LLVMBuildAdd(ctx->builder, param_index,
+		param_index = LLVMBuildAdd(ctx->builder, LLVMConstInt(ctx->i32, param, false),
 					   indir_index, "");
-
+	else
+		param_index = LLVMConstInt(ctx->i32, param + const_index, false);
 	return get_tcs_tes_buffer_address(ctx, vertex_index, param_index);
 }
 
@@ -2541,12 +2539,14 @@ get_dw_address(struct nir_to_llvm_context *ctx,
 						    stride, ""), "");
 	}
 
-	dw_addr = LLVMBuildAdd(ctx->builder, dw_addr,
-			       LLVMConstInt(ctx->i32, const_index, false), "");
 	if (indir_index)
 		dw_addr = LLVMBuildAdd(ctx->builder, dw_addr,
 				       LLVMBuildMul(ctx->builder, indir_index,
 						    LLVMConstInt(ctx->i32, 4, false), ""), "");
+	else if (const_index)
+		dw_addr = LLVMBuildAdd(ctx->builder, dw_addr,
+				       LLVMConstInt(ctx->i32, const_index, false), "");
+
 	dw_addr = LLVMBuildAdd(ctx->builder, dw_addr,
 			       LLVMConstInt(ctx->i32, param * 4, false), "");
 	return dw_addr;
@@ -2583,6 +2583,7 @@ load_tcs_input(struct nir_to_llvm_context *ctx,
 				       ctx->i32one, "");
 	}
 	result = ac_build_gather_values(&ctx->ac, value, instr->num_components);
+	result = LLVMBuildBitCast(ctx->builder, result, get_def_type(ctx, &instr->dest.ssa), "");
 	return result;
 }
 
@@ -2619,6 +2620,7 @@ load_tcs_output(struct nir_to_llvm_context *ctx,
 				       ctx->i32one, "");
 	}
 	result = ac_build_gather_values(&ctx->ac, value, instr->num_components);
+	result = LLVMBuildBitCast(ctx->builder, result, get_def_type(ctx, &instr->dest.ssa), "");
 	return result;
 }
 
@@ -2702,6 +2704,7 @@ load_tes_input(struct nir_to_llvm_context *ctx,
 
 	result = ac_build_buffer_load(&ctx->ac, ctx->hs_ring_tess_offchip, instr->num_components, NULL,
 				      ctx->oc_lds, buf_addr, 0, 1, 0, true);
+	result = LLVMBuildBitCast(ctx->builder, result, get_def_type(ctx, &instr->dest.ssa), "");
 	return result;
 }
 
