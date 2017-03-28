@@ -3809,6 +3809,8 @@ static void visit_intrinsic(struct nir_to_llvm_context *ctx,
 			result = ctx->gs_prim_id;
 		else if (ctx->stage == MESA_SHADER_TESS_CTRL)
 			result = ctx->tcs_patch_id;
+		else if (ctx->stage == MESA_SHADER_TESS_EVAL)
+			result = ctx->tes_patch_id;
 		else
 			fprintf(stderr, "Unknown primitive id intrinsic: %d", ctx->stage);
 		break;
