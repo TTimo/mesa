@@ -784,8 +784,11 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		}
 		if (ctx->options->key.vs.as_es)
 			ctx->es2gs_offset = LLVMGetParam(ctx->main_function, arg_idx++);
-		else if (ctx->options->key.vs.as_ls)
+		else if (ctx->options->key.vs.as_ls) {
+			set_userdata_location_shader(ctx, AC_UD_VS_LS_TCS_IN_LAYOUT, user_sgpr_idx, 1);
+			user_sgpr_idx += 1;
 			ctx->ls_out_layout = LLVMGetParam(ctx->main_function, arg_idx++);
+		}
 		ctx->vertex_id = LLVMGetParam(ctx->main_function, arg_idx++);
 		if (!ctx->is_gs_copy_shader) {
 			ctx->rel_auto_id = LLVMGetParam(ctx->main_function, arg_idx++);
@@ -796,6 +799,8 @@ static void create_function(struct nir_to_llvm_context *ctx)
 			declare_tess_lds(ctx);
 		break;
 	case MESA_SHADER_TESS_CTRL:
+		set_userdata_location_shader(ctx, AC_UD_TCS_OFFCHIP_LAYOUT, user_sgpr_idx, 4);
+		user_sgpr_idx += 4;
 		ctx->tcs_offchip_layout = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->tcs_out_offsets = LLVMGetParam(ctx->main_function, arg_idx++);
 		ctx->tcs_out_layout = LLVMGetParam(ctx->main_function, arg_idx++);
@@ -808,6 +813,8 @@ static void create_function(struct nir_to_llvm_context *ctx)
 		declare_tess_lds(ctx);
 		break;
 	case MESA_SHADER_TESS_EVAL:
+		set_userdata_location_shader(ctx, AC_UD_TES_OFFCHIP_LAYOUT, user_sgpr_idx, 1);
+		user_sgpr_idx += 1;
 		ctx->tcs_offchip_layout = LLVMGetParam(ctx->main_function, arg_idx++);
 		if (ctx->options->key.tes.as_es) {
 			ctx->oc_lds = LLVMGetParam(ctx->main_function, arg_idx++);
