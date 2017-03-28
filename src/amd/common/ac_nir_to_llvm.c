@@ -5472,7 +5472,34 @@ write_tess_factors(struct nir_to_llvm_context *ctx)
 					    stride - 4, byteoffset, tf_base,
 					    20, 1, 0, true, false);
 
-	//TODO store to offchip for TES to read
+	//TODO store to offchip for TES to read - only if TES reads them
+	if (1) {
+		LLVMValueRef inner_vec, outer_vec, tf_outer_offset;
+		LLVMValueRef tf_inner_offset;
+		unsigned param_outer, param_inner;
+
+		param_outer = shader_io_get_unique_index(VARYING_SLOT_TESS_LEVEL_OUTER);
+		tf_outer_offset = get_tcs_tes_buffer_address(ctx, NULL,
+							     LLVMConstInt(ctx->i32, param_outer, 0));
+
+		outer_vec = ac_build_gather_values(&ctx->ac, outer,
+						   util_next_power_of_two(outer_comps));
+
+		ac_build_buffer_store_dword(&ctx->ac, ctx->hs_ring_tess_offchip, outer_vec,
+					    outer_comps, tf_outer_offset,
+					    ctx->oc_lds, 0, 1, 0, true, false);
+		if (inner_comps) {
+			param_inner = shader_io_get_unique_index(VARYING_SLOT_TESS_LEVEL_INNER);
+			tf_inner_offset = get_tcs_tes_buffer_address(ctx, NULL,
+								     LLVMConstInt(ctx->i32, param_inner, 0));
+
+			inner_vec = inner_comps == 1 ? inner[0] :
+				ac_build_gather_values(&ctx->ac, inner, inner_comps);
+			ac_build_buffer_store_dword(&ctx->ac, ctx->hs_ring_tess_offchip, inner_vec,
+						    inner_comps, tf_inner_offset,
+						    ctx->oc_lds, 0, 1, 0, true, false);
+		}
+	}
 	ac_nir_build_endif(&if_ctx);
 }
 
