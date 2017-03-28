@@ -1605,8 +1605,8 @@ calculate_gs_ring_sizes(struct radv_pipeline *pipeline)
 	unsigned max_size = ((unsigned)(63.999 * 1024 * 1024) & ~255) * num_se;
 	struct ac_shader_variant_info *gs_info = &pipeline->shaders[MESA_SHADER_GEOMETRY]->info;
 	struct ac_es_output_info *es_info = radv_pipeline_has_tess(pipeline) ?
-		&pipeline->shaders[MESA_SHADER_VERTEX]->info.vs.es_info :
-		&pipeline->shaders[MESA_SHADER_TESS_EVAL]->info.tes.es_info;
+		&pipeline->shaders[MESA_SHADER_TESS_EVAL]->info.tes.es_info :
+		&pipeline->shaders[MESA_SHADER_VERTEX]->info.vs.es_info;
 
 	/* Calculate the minimum size. */
 	unsigned min_esgs_ring_size = align(es_info->esgs_itemsize * gs_vertex_reuse *
