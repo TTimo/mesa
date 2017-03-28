@@ -600,11 +600,12 @@ radv_compute_tes_key(bool as_es)
 }
 
 static union ac_shader_variant_key
-radv_compute_tcs_key(unsigned primitive_mode)
+radv_compute_tcs_key(unsigned primitive_mode, unsigned input_vertices)
 {
 	union ac_shader_variant_key key;
 	memset(&key, 0, sizeof(key));
 	key.tcs.primitive_mode = primitive_mode;
+	key.tcs.input_vertices = input_vertices;
 	return key;
 }
 
@@ -619,7 +620,8 @@ radv_tess_pipeline_compile(struct radv_pipeline *pipeline,
 			   const char *tes_entrypoint,
 			   const VkSpecializationInfo *tcs_spec_info,
 			   const VkSpecializationInfo *tes_spec_info,
-			   struct radv_pipeline_layout *layout)
+			   struct radv_pipeline_layout *layout,
+			   unsigned input_vertices)
 {
 	unsigned char tcs_sha1[20], tes_sha1[20];
 	struct radv_shader_variant *tes_variant, *tcs_variant;
@@ -641,7 +643,7 @@ radv_tess_pipeline_compile(struct radv_pipeline *pipeline,
 								     tes_sha1);
 
 	if (tes_variant) {
-		tcs_key = radv_compute_tcs_key(tes_variant->info.tes.primitive_mode);
+		tcs_key = radv_compute_tcs_key(tes_variant->info.tes.primitive_mode, input_vertices);
 	
 		if (tcs_module->nir)
 			_mesa_sha1_compute(tcs_module->nir->info->name,
@@ -681,7 +683,7 @@ radv_tess_pipeline_compile(struct radv_pipeline *pipeline,
 						 layout, &tes_key, &tes_code,
 						 &tes_code_size, dump);
 
-	tcs_key = radv_compute_tcs_key(tes_nir->info->tess.primitive_mode);
+	tcs_key = radv_compute_tcs_key(tes_nir->info->tess.primitive_mode, input_vertices);
 	if (tcs_module->nir)
 		_mesa_sha1_compute(tcs_module->nir->info->name,
 				   strlen(tcs_module->nir->info->name),
@@ -1993,7 +1995,8 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 					   pStages[MESA_SHADER_TESS_EVAL]->pName,
 					   pStages[MESA_SHADER_TESS_CTRL]->pSpecializationInfo,
 					   pStages[MESA_SHADER_TESS_EVAL]->pSpecializationInfo,
-					   pipeline->layout);
+					   pipeline->layout,
+					   pCreateInfo->pTessellationState->patchControlPoints);
 		pipeline->active_stages |= mesa_to_vk_shader_stage(MESA_SHADER_TESS_EVAL) |
 			mesa_to_vk_shader_stage(MESA_SHADER_TESS_CTRL);
 	}

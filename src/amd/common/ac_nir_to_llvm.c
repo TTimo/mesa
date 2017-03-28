@@ -3935,6 +3935,9 @@ static void visit_intrinsic(struct nir_to_llvm_context *ctx,
 	case nir_intrinsic_load_tess_coord:
 		result = visit_load_tess_coord(ctx, instr);
 		break;
+	case nir_intrinsic_load_patch_vertices_in:
+		result = LLVMConstInt(ctx->i32, ctx->options->key.tcs.input_vertices, false);
+		break;
 	default:
 		fprintf(stderr, "Unknown intrinsic: ");
 		nir_print_instr(&instr->instr, stderr);

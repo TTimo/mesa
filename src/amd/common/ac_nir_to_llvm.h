@@ -49,6 +49,7 @@ struct ac_tes_variant_key {
 
 struct ac_tcs_variant_key {
 	unsigned primitive_mode;
+	unsigned input_vertices;
 };
 
 struct ac_fs_variant_key {
