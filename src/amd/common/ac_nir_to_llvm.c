@@ -2611,13 +2611,19 @@ store_tcs_output(struct nir_to_llvm_context *ctx,
 		    instr->variables[0]->var->data.location == VARYING_SLOT_TESS_LEVEL_OUTER)
 			is_tess_factor = true;
 
-		if (!is_tess_factor)
+		if (!is_tess_factor && writemask != 0xF)
 			ac_build_buffer_store_dword(&ctx->ac, ctx->hs_ring_tess_offchip, value, 1,
 						    buf_addr, ctx->oc_lds,
 						    4 * chan, 1, 0, true, false);
 
 		dw_addr = LLVMBuildAdd(ctx->builder, dw_addr,
 				       ctx->i32one, "");
+	}
+
+	if (writemask == 0xF) {
+		ac_build_buffer_store_dword(&ctx->ac, ctx->hs_ring_tess_offchip, src, 4,
+					    buf_addr, ctx->oc_lds,
+					    0, 1, 0, true, false);
 	}
 }
 
@@ -2641,12 +2647,8 @@ load_tes_input(struct nir_to_llvm_context *ctx,
 			      &const_index, &indir_index);
 	addr = get_tcs_tes_buffer_address(ctx, vertex_index, LLVMConstInt(ctx->i32, param, false));
 
-	for (unsigned i = 0; i < instr->num_components; i++) {
-		value[i] = ac_build_buffer_load(&ctx->ac, ctx->hs_ring_tess_offchip, 1, NULL,
-						ctx->oc_lds, addr, 0, 1, 0, true);
-		addr = LLVMBuildAdd(ctx->builder, addr, ctx->i32one, "");
-	}
-	result = ac_build_gather_values(&ctx->ac, value, instr->num_components);
+	result = ac_build_buffer_load(&ctx->ac, ctx->hs_ring_tess_offchip, instr->num_components, NULL,
+				      ctx->oc_lds, addr, 0, 1, 0, true);
 	return result;
 }
 
