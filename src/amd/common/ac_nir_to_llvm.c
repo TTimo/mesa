@@ -6015,6 +6015,7 @@ void ac_compile_nir_shader(LLVMTargetMachineRef tm,
 		shader_info->tes.spacing = nir->info->tess.spacing;
 		shader_info->tes.ccw = nir->info->tess.ccw;
 		shader_info->tes.point_mode = nir->info->tess.point_mode;
+		shader_info->tes.as_es = options->key.tes.as_es;
 		break;
 	case MESA_SHADER_TESS_CTRL:
 		shader_info->tcs.tcs_vertices_out = nir->info->tess.tcs_vertices_out;
