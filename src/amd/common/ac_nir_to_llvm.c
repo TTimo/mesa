@@ -2680,7 +2680,7 @@ store_tcs_output(struct nir_to_llvm_context *ctx,
 		if (!is_tess_factor && writemask != 0xF)
 			ac_build_buffer_store_dword(&ctx->ac, ctx->hs_ring_tess_offchip, value, 1,
 						    buf_addr, ctx->oc_lds,
-						    base + 4 * chan, 1, 0, true, false);
+						    4 * (base + chan), 1, 0, true, false);
 
 		dw_addr = LLVMBuildAdd(ctx->builder, dw_addr,
 				       ctx->i32one, "");
@@ -2689,7 +2689,7 @@ store_tcs_output(struct nir_to_llvm_context *ctx,
 	if (writemask == 0xF) {
 		ac_build_buffer_store_dword(&ctx->ac, ctx->hs_ring_tess_offchip, src, 4,
 					    buf_addr, ctx->oc_lds,
-					    base, 1, 0, true, false);
+					    (base * 4), 1, 0, true, false);
 	}
 }
 
@@ -2715,7 +2715,7 @@ load_tes_input(struct nir_to_llvm_context *ctx,
 						     is_compact, vertex_index, indir_index);
 
 	result = ac_build_buffer_load(&ctx->ac, ctx->hs_ring_tess_offchip, instr->num_components, NULL,
-				      ctx->oc_lds, buf_addr, is_compact ? const_index : 0, 1, 0, true);
+				      buf_addr, ctx->oc_lds, is_compact ? (4 * const_index) : 0, 1, 0, true);
 	result = trim_vector(ctx, result, instr->num_components);
 	result = LLVMBuildBitCast(ctx->builder, result, get_def_type(ctx, &instr->dest.ssa), "");
 	return result;
@@ -4838,12 +4838,17 @@ handle_shader_output_decl(struct nir_to_llvm_context *ctx,
 		return;
 	
 	if (ctx->stage == MESA_SHADER_VERTEX ||
+	    ctx->stage == MESA_SHADER_TESS_EVAL ||
 	    ctx->stage == MESA_SHADER_GEOMETRY) {
 		if (idx == VARYING_SLOT_CLIP_DIST0) {
 			int length = ctx->num_output_clips + ctx->num_output_culls;
 			if (ctx->stage == MESA_SHADER_VERTEX) {
 				ctx->shader_info->vs.outinfo.clip_dist_mask = (1 << ctx->num_output_clips) - 1;
 				ctx->shader_info->vs.outinfo.cull_dist_mask = (1 << ctx->num_output_culls) - 1;
+			}
+			if (ctx->stage == MESA_SHADER_TESS_EVAL) {
+				ctx->shader_info->tes.outinfo.clip_dist_mask = (1 << ctx->num_output_clips) - 1;
+				ctx->shader_info->tes.outinfo.cull_dist_mask = (1 << ctx->num_output_culls) - 1;
 			}
 
 			if (length > 4)
@@ -5215,7 +5220,7 @@ handle_es_outputs_post(struct nir_to_llvm_context *ctx,
 		LLVMValueRef *out_ptr = &ctx->outputs[i * 4];
 		int param_index;
 		int length = 4;
-		int start = 0;
+
 		if (!(ctx->output_mask & (1ull << i)))
 			continue;
 
@@ -5226,6 +5231,10 @@ handle_es_outputs_post(struct nir_to_llvm_context *ctx,
 
 		if (param_index > max_output_written)
 			max_output_written = param_index;
+		if (length > 4) {
+			if (param_index + 1 > max_output_written)
+				max_output_written = param_index + 1;
+		}
 
 		for (j = 0; j < length; j++) {
 			LLVMValueRef out_val = LLVMBuildLoad(ctx->builder, out_ptr[j], "");
@@ -5235,7 +5244,7 @@ handle_es_outputs_post(struct nir_to_llvm_context *ctx,
 					       ctx->esgs_ring,
 					       out_val, 1,
 					       NULL, ctx->es2gs_offset,
-					       (4 * param_index + j + start) * 4,
+					       (4 * param_index + j) * 4,
 					       1, 1, true, true);
 		}
 	}
@@ -5256,8 +5265,13 @@ handle_ls_outputs_post(struct nir_to_llvm_context *ctx)
 
 		if (!(ctx->output_mask & (1ull << i)))
 			continue;
+
+		if (i == VARYING_SLOT_CLIP_DIST0)
+			length = ctx->num_output_clips + ctx->num_output_culls;
 		int param = shader_io_get_unique_index(i);
 		mark_tess_output(ctx, false, param);
+		if (length > 4)
+			mark_tess_output(ctx, false, param + 1);
 		LLVMValueRef dw_addr = LLVMBuildAdd(ctx->builder, base_dw_addr,
 						    LLVMConstInt(ctx->i32, param * 4, false),
 						    "");
