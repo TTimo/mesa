@@ -624,7 +624,7 @@ radv_tess_pipeline_compile(struct radv_pipeline *pipeline,
 			   unsigned input_vertices)
 {
 	unsigned char tcs_sha1[20], tes_sha1[20];
-	struct radv_shader_variant *tes_variant, *tcs_variant;
+	struct radv_shader_variant *tes_variant = NULL, *tcs_variant = NULL;
 	nir_shader *tes_nir, *tcs_nir;
 	void *tes_code = NULL, *tcs_code = NULL;
 	unsigned tes_code_size = 0, tcs_code_size = 0;

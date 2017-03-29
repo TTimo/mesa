@@ -3779,8 +3779,9 @@ visit_load_tess_coord(struct nir_to_llvm_context *ctx,
 		coord[2] = LLVMBuildFSub(ctx->builder, ctx->f32one,
 					LLVMBuildFAdd(ctx->builder, coord[0], coord[1], ""), "");
 
-	return ac_build_gather_values(&ctx->ac, coord, 4);
-
+	LLVMValueRef result = ac_build_gather_values(&ctx->ac, coord, instr->num_components);
+	return LLVMBuildBitCast(ctx->builder, result,
+				get_def_type(ctx, &instr->dest.ssa), "");
 }
 
 static void visit_intrinsic(struct nir_to_llvm_context *ctx,
