@@ -2645,10 +2645,16 @@ store_tcs_output(struct nir_to_llvm_context *ctx,
 	const bool per_vertex = nir_is_per_vertex_io(instr->variables[0]->var, ctx->stage);
 	const bool is_compact = instr->variables[0]->var->data.compact;
 
-	param = shader_io_get_unique_index(instr->variables[0]->var->data.location);
 	radv_get_deref_offset(ctx, instr->variables[0],
 			      false, NULL, per_vertex ? &vertex_index : NULL,
 			      &const_index, &indir_index);
+
+	param = shader_io_get_unique_index(instr->variables[0]->var->data.location);
+	if (instr->variables[0]->var->data.location == VARYING_SLOT_CLIP_DIST0 &&
+	    is_compact && const_index > 3) {
+		const_index -= 3;
+		param++;
+	}
 
 	if (!instr->variables[0]->var->data.patch) {
 		stride = unpack_param(ctx, ctx->tcs_out_layout, 13, 8);
@@ -2706,11 +2712,15 @@ load_tes_input(struct nir_to_llvm_context *ctx,
 	const bool per_vertex = nir_is_per_vertex_io(instr->variables[0]->var, ctx->stage);
 	const bool is_compact = instr->variables[0]->var->data.compact;
 
-	param = shader_io_get_unique_index(instr->variables[0]->var->data.location);
 	radv_get_deref_offset(ctx, instr->variables[0],
 			      false, NULL, per_vertex ? &vertex_index : NULL,
 			      &const_index, &indir_index);
-
+	param = shader_io_get_unique_index(instr->variables[0]->var->data.location);
+	if (instr->variables[0]->var->data.location == VARYING_SLOT_CLIP_DIST0 &&
+	    is_compact && const_index > 3) {
+		const_index -= 3;
+		param++;
+	}
 	buf_addr = get_tcs_tes_buffer_address_params(ctx, param, const_index,
 						     is_compact, vertex_index, indir_index);
 
