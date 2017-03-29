@@ -609,8 +609,6 @@ radv_compute_tcs_key(unsigned primitive_mode, unsigned input_vertices)
 	return key;
 }
 
-
-
 static void
 radv_tess_pipeline_compile(struct radv_pipeline *pipeline,
 			   struct radv_pipeline_cache *cache,
@@ -1764,9 +1762,9 @@ calculate_tess_state(struct radv_pipeline *pipeline,
 	else if (tes->info.tes.primitive_mode == GL_ISOLINES)
 		topology = V_028B6C_OUTPUT_LINE;
 	else if (tes->info.tes.ccw)
-		topology = V_028B6C_OUTPUT_TRIANGLE_CCW;
-	else
 		topology = V_028B6C_OUTPUT_TRIANGLE_CW;
+	else
+		topology = V_028B6C_OUTPUT_TRIANGLE_CCW;
 
 	if (pipeline->device->has_distributed_tess) {
 		if (pipeline->device->physical_device->rad_info.family == CHIP_FIJI ||
