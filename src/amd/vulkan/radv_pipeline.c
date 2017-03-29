@@ -1826,7 +1826,7 @@ static uint32_t si_vgt_gs_mode(struct radv_shader_variant *gs)
 static void calculate_pa_cl_vs_out_cntl(struct radv_pipeline *pipeline)
 {
 	struct radv_shader_variant *vs;
-	vs = radv_pipeline_has_gs(pipeline) ? pipeline->gs_copy_shader : pipeline->shaders[MESA_SHADER_VERTEX];
+	vs = radv_pipeline_has_gs(pipeline) ? pipeline->gs_copy_shader : (radv_pipeline_has_tess(pipeline) ? pipeline->shaders[MESA_SHADER_TESS_EVAL] :  pipeline->shaders[MESA_SHADER_VERTEX]);
 
 	struct ac_vs_output_info *outinfo = &vs->info.vs.outinfo;
 
@@ -1978,7 +1978,6 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 					       pipeline->layout, &key);
 
 		pipeline->active_stages |= mesa_to_vk_shader_stage(MESA_SHADER_GEOMETRY);
-		calculate_gs_ring_sizes(pipeline);
 
 		pipeline->graphics.vgt_gs_mode = si_vgt_gs_mode(pipeline->shaders[MESA_SHADER_GEOMETRY]);
 	} else
@@ -2106,7 +2105,10 @@ radv_pipeline_init(struct radv_pipeline *pipeline,
 			S_028B54_GS_EN(1) |
 			S_028B54_VS_EN(V_028B54_VS_STAGE_COPY_SHADER);
 	pipeline->graphics.vgt_shader_stages_en = stages;
-	
+
+	if (radv_pipeline_has_gs(pipeline))
+		calculate_gs_ring_sizes(pipeline);
+
 	if (radv_pipeline_has_tess(pipeline)) {
 		if (pipeline->graphics.prim == V_008958_DI_PT_PATCH) {
 			pipeline->graphics.prim_vertex_count.min = pCreateInfo->pTessellationState->patchControlPoints;
