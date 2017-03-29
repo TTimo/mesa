@@ -4833,6 +4833,10 @@ handle_shader_output_decl(struct nir_to_llvm_context *ctx,
 	unsigned mask_attribs;
 	variable->data.driver_location = idx * 4;
 
+	/* tess ctrl has it's own load/store paths for outputs */
+	if (ctx->stage == MESA_SHADER_TESS_CTRL)
+		return;
+	
 	if (ctx->stage == MESA_SHADER_VERTEX ||
 	    ctx->stage == MESA_SHADER_GEOMETRY) {
 		if (idx == VARYING_SLOT_CLIP_DIST0) {
